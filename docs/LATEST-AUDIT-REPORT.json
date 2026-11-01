@@ -1,0 +1,731 @@
+{
+  "timestamp": "2026-10-31T06:17:09.622Z",
+  "auditDurationSec": 12.4,
+  "is100PercentReady": false,
+  "summary": {
+    "routesCount": 138,
+    "testSuitePassed": true,
+    "testFilesPassed": 24,
+    "testsPassed": 328,
+    "databaseReady": true,
+    "e2eFlowVerified": false
+  },
+  "endpoints": {
+    "customer": [
+      {
+        "method": "POST",
+        "path": "/register",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/verify-email",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/verify-email/resend",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/login",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/refresh",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/logout",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/logout-all",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/forgot-password",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/reset-password",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/claim-admin",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/my",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/manage/:reference",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/admin",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/operator",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:reference",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id/cancel",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/operator/:id/check-in",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/chat/chat.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/chat/chat.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:chatId",
+        "file": "src/app/modules/chat/chat.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:chatId",
+        "file": "src/app/modules/chat/chat.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/analytics/overview",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/operator/overview",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/stats",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/monthly-trends",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/recent-activities",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/top-performers",
+        "file": "src/app/modules/dashboard/dashboard.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/public",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bulk/publish",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bulk/category",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/bulk/delete",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/faq/faq.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/stats",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/ferry/ferry.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/legal/legal.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:legalId",
+        "file": "src/app/modules/legal/legal.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/legal/legal.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:legalId",
+        "file": "src/app/modules/legal/legal.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:legalId",
+        "file": "src/app/modules/legal/legal.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:chatId",
+        "file": "src/app/modules/message/message.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/:chatId",
+        "file": "src/app/modules/message/message.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/notification/notification.routes.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:notificationId/read",
+        "file": "src/app/modules/notification/notification.routes.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/read-all",
+        "file": "src/app/modules/notification/notification.routes.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:notificationId",
+        "file": "src/app/modules/notification/notification.routes.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/port/port.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/port/port.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/port/port.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/port/port.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/port/port.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/settings",
+        "file": "src/app/modules/provider/provider.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/settings",
+        "file": "src/app/modules/provider/provider.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/provider/provider.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/provider/provider.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id/status",
+        "file": "src/app/modules/provider/provider.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/connected-ports",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/ports",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/popular",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bulk-status",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/bulk-delete",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/route/route.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/search",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/public/:id",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/details/:id",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bulk-status",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/bulk-delete",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id/status",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/schedule/schedule.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/reward-split",
+        "file": "src/app/modules/setting/setting.route.ts"
+      },
+      {
+        "method": "PUT",
+        "path": "/reward-split",
+        "file": "src/app/modules/setting/setting.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/my-tickets",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/:id/messages",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:id",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:id",
+        "file": "src/app/modules/support/support.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/manifest",
+        "file": "src/app/modules/ticket/ticket.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/manifest/:ticketId/board",
+        "file": "src/app/modules/ticket/ticket.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/manifest/:ticketId/unboard",
+        "file": "src/app/modules/ticket/ticket.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/pass/:identifier",
+        "file": "src/app/modules/ticket/ticket.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:identifier",
+        "file": "src/app/modules/ticket/ticket.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/admin-dashboard",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/me",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/me",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/me/password",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/me/password",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/me/sessions",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/me/sessions/:id",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/profile",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/profile",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/delete-account",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/stats",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:userId",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId/status",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId/suspend",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId/reactivate",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId/block",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:userId/unblock",
+        "file": "src/app/modules/user/user.route.ts"
+      },
+      {
+        "method": "DELETE",
+        "path": "/:userId",
+        "file": "src/app/modules/user/user.route.ts"
+      }
+    ],
+    "operator": [
+      {
+        "method": "GET",
+        "path": "/overview",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/settings",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/settings",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/manifest",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/manifest/:ticketId/board",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/manifest/:ticketId/unboard",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/bookings",
+        "file": "src/app/modules/operator/operator.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/bookings/:id/check-in",
+        "file": "src/app/modules/operator/operator.route.ts"
+      }
+    ],
+    "admin": [
+      {
+        "method": "GET",
+        "path": "/analytics/overview",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/bookings",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/bookings/:reference",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/settings",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/settings/commission",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/settings/platform",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/users/:userId",
+        "file": "src/app/modules/admin/admin.route.ts"
+      }
+    ],
+    "shared": []
+  },
+  "database": {
+    "connected": true,
+    "ports": 6,
+    "operators": 1,
+    "ferries": 5,
+    "routes": 1,
+    "totalSchedules": 21,
+    "futureBookableSchedules": 20,
+    "bookings": 20,
+    "tickets": 20
+  },
+  "tests": {
+    "passed": true,
+    "summary": "24 test files, 328 tests passed (100%)"
+  },
+  "e2eFlow": {
+    "verified": false,
+    "summary": ""
+  }
+}

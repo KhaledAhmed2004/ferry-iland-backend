@@ -1,0 +1,497 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  OPERATOR
+  ADMIN
+}
+
+enum AccountStatus {
+  UNVERIFIED
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  DEACTIVATED
+}
+
+model User {
+  id                  String          @id @default(uuid()) @db.Uuid
+  email               String          @unique
+  passwordHash        String
+  name                String
+  phoneNumber         String?
+  role                Role            @default(USER)
+  status              AccountStatus   @default(UNVERIFIED)
+  isEmailVerified     Boolean         @default(false)
+  isRootAdmin         Boolean         @default(false)
+  deletedAt           DateTime?
+  failedLoginAttempts Int             @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  sessions            Session[]
+  mfaCredential       MfaCredential?
+  verificationTokens  VerificationToken[]
+  operatorProfile     OperatorProfile?
+  supportTickets      SupportTicket[]
+  chatParticipants    ChatParticipant[]
+  messages            Message[]
+  bookings            Booking[]
+  requestedRefunds    Refund[]
+}
+
+model OperatorProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName       String
+  contactPersonName String
+  contactEmail      String?
+  businessAddress   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  routes            Route[]
+  ferries           Ferry[]
+  offDays           OffDay[]
+}
+
+model MfaCredential {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @db.Uuid
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretEncrypted String
+  isEnabled       Boolean  @default(false)
+  enabledAt       DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  tokenVersion     Int       @default(1)
+  deviceInfo       String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+  lastUsedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+
+model VerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    // Hashed token for security
+  type      TokenType
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+enum RouteStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Port {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  departureRoutes   Route[] @relation("DeparturePort")
+  destinationRoutes Route[] @relation("DestinationPort")
+}
+
+model Route {
+  id                String          @id @default(uuid()) @db.Uuid
+  operatorId        String          @db.Uuid
+  operator          OperatorProfile @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  departurePortId   String          @db.Uuid
+  departurePort     Port            @relation("DeparturePort", fields: [departurePortId], references: [id], onDelete: Restrict)
+  destinationPortId String          @db.Uuid
+  destinationPort   Port            @relation("DestinationPort", fields: [destinationPortId], references: [id], onDelete: Restrict)
+  durationMinutes   Int
+  basePrice         Float?          @default(30)
+  description       String?
+  amenities         String[]        @default([])
+  imageUrl          String?
+  isBorderCrossing  Boolean         @default(false)
+  status            RouteStatus     @default(ACTIVE)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  schedules         Schedule[]
+
+  @@unique([operatorId, departurePortId, destinationPortId])
+  @@index([operatorId])
+  @@index([departurePortId])
+  @@index([destinationPortId])
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id        String           @id @default(uuid()) @db.Uuid
+  subject   String
+  userId    String           @db.Uuid
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    TicketStatus     @default(OPEN)
+  messages  SupportMessage[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid()) @db.Uuid
+  ticketId  String        @db.Uuid
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderId  String        @db.Uuid
+  message   String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId])
+}
+
+model Chat {
+  id              String            @id @default(uuid()) @db.Uuid
+  conversationKey String?           @unique
+  lastMessage     String?
+  lastMessageAt   DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  participants    ChatParticipant[]
+  messages        Message[]
+}
+
+model ChatParticipant {
+  id        String   @id @default(uuid()) @db.Uuid
+  chatId    String   @db.Uuid
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([chatId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id          String    @id @default(uuid()) @db.Uuid
+  chatId      String    @db.Uuid
+  chat        Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId    String    @db.Uuid
+  sender      User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  text        String?
+  attachments String[]  @default([])
+  replyToId   String?   @db.Uuid
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[] @relation("MessageReplies")
+  readByIds   String[]  @default([])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([chatId, createdAt])
+  @@index([senderId])
+}
+
+enum VesselType {
+  CATAMARAN
+  SPEEDBOAT
+  TRADITIONAL_FERRY
+}
+
+enum VesselStatus {
+  IN_SERVICE
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum TripStatus {
+  ON_TIME
+  PREPARING
+  BOARDING
+  DEPARTED
+  DELAYED
+  ARRIVED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  CHECKED_IN
+  EXPIRED
+}
+
+enum BoardingStatus {
+  PENDING
+  CHECKED_IN
+  BOARDED
+}
+
+enum CabinClass {
+  STANDARD
+  BUSINESS
+  VIP
+}
+
+enum OffDayCategory {
+  MAINTENANCE
+  WEATHER
+  PUBLIC_HOLIDAY
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+  CANCELED
+}
+
+enum PaymentProvider {
+  STRIPE
+  MANUAL
+  LEGACY_SEED
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum RefundReason {
+  CUSTOMER_CANCEL
+  ADMIN
+  TRIP_CANCELLED
+  LATE_PAYMENT
+}
+
+model Ferry {
+  id           String          @id @default(uuid()) @db.Uuid
+  operatorId   String          @db.Uuid
+  operator     OperatorProfile @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  name         String
+  registration String          @unique
+  capacity     Int
+  type         VesselType      @default(CATAMARAN)
+  status       VesselStatus    @default(IN_SERVICE)
+  imageUrl     String?
+  amenities    String[]        @default([])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  schedules    Schedule[]
+  offDays      OffDay[]
+
+  @@index([operatorId])
+}
+
+model Schedule {
+  id             String      @id @default(uuid()) @db.Uuid
+  routeId        String      @db.Uuid
+  route          Route       @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  ferryId        String      @db.Uuid
+  ferry          Ferry       @relation(fields: [ferryId], references: [id], onDelete: Restrict)
+  departureTime  DateTime
+  arrivalTime    DateTime
+  gate           String?
+  captain        String?
+  adultFare      Float       @default(0)
+  childFare      Float       @default(0)
+  status         TripStatus  @default(ON_TIME)
+  availableSeats Int
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  bookings       Booking[]
+
+  @@index([routeId, departureTime])
+  @@index([ferryId, departureTime])
+}
+
+model Booking {
+  id                 String        @id @default(uuid()) @db.Uuid
+  reference          String        @unique
+  userId             String?       @db.Uuid
+  user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  scheduleId         String        @db.Uuid
+  schedule           Schedule      @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  leadPassengerName  String
+  leadPassengerEmail String
+  leadPassengerPhone String?
+  adultsCount        Int           @default(1)
+  childrenCount      Int           @default(0)
+  totalAmount        Float
+  status             BookingStatus @default(CONFIRMED)
+  holdExpiresAt      DateTime?
+  confirmedAt        DateTime?
+  cancelledAt        DateTime?
+  expiredAt          DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  tickets            Ticket[]
+  payment            Payment?
+
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([reference])
+  @@index([status, holdExpiresAt])
+}
+
+model Ticket {
+  id             String         @id @default(uuid()) @db.Uuid
+  bookingId      String         @db.Uuid
+  booking        Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ticketNumber   String         @unique
+  passengerName  String
+  nationality    String
+  passportOrId   String
+  cabinClass     CabinClass     @default(STANDARD)
+  luggageCount   Int            @default(0)
+  boardingStatus BoardingStatus @default(PENDING)
+  boardedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([bookingId])
+}
+
+model Payment {
+  id                 String        @id @default(uuid()) @db.Uuid
+  bookingId          String        @unique @db.Uuid
+  booking            Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  amountCents             Int
+  currency                String          @default("usd")
+  commissionRate          Float
+  platformCommissionCents Int
+  operatorPayoutCents     Int
+  provider                PaymentProvider
+  stripePaymentIntentId   String?         @unique
+  status                  PaymentStatus   @default(PENDING)
+  lastFailureCode         String?
+  lastFailureMessage      String?
+  paymentMethod           String?
+  paidAt                  DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  /// Deprecated by spec 0001: no longer read or written. Dropped by the contract migration (scope feature 9).
+  transactionId      String?       @unique
+  /// Deprecated by spec 0001 (use amountCents).
+  amount             Float?
+  /// Deprecated by spec 0001 (use platformCommissionCents).
+  platformCommission Float?
+  /// Deprecated by spec 0001 (use operatorPayoutCents).
+  operatorPayout     Float?
+
+  refunds            Refund[]
+  webhookEvents      StripeWebhookEvent[]
+}
+
+model Refund {
+  id                String       @id @default(uuid()) @db.Uuid
+  paymentId         String       @db.Uuid
+  payment           Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amountCents       Int
+  status            RefundStatus @default(PENDING)
+  reason            RefundReason
+  stripeRefundId    String?      @unique
+  requestedByUserId String?      @db.Uuid
+  requestedBy       User?        @relation(fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  failureMessage    String?
+  createdAt         DateTime     @default(now())
+  processedAt       DateTime?
+
+  @@index([paymentId])
+}
+
+/// Stripe events already received, keyed by the Stripe event id so a replayed webhook is applied once.
+model StripeWebhookEvent {
+  id          String    @id
+  type        String
+  paymentId   String?   @db.Uuid
+  payment     Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([paymentId])
+}
+
+model OffDay {
+  id         String          @id @default(uuid()) @db.Uuid
+  operatorId String          @db.Uuid
+  operator   OperatorProfile @relation(fields: [operatorId], references: [id], onDelete: Cascade)
+  ferryId    String?         @db.Uuid
+  ferry      Ferry?          @relation(fields: [ferryId], references: [id], onDelete: Cascade)
+  date       DateTime
+  reason     String
+  category   OffDayCategory  @default(MAINTENANCE)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([operatorId, date])
+}
+
+model PlatformSetting {
+  id             String   @id @default(uuid()) @db.Uuid
+  platformName   String   @default("FerryGo")
+  supportEmail   String   @default("support@ferrygo.com")
+  commissionRate Float    @default(10.0)
+  payoutSchedule String   @default("WEEKLY")
+  seatHoldMinutes Int     @default(15)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Faq {
+  id          String   @id @default(uuid()) @db.Uuid
+  question    String
+  answer      String   @db.Text
+  category    String   @default("Booking")
+  isPublished Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([isPublished])
+  @@index([order])
+}
