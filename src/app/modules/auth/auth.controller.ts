@@ -14,6 +14,28 @@ import {
   IClaimAdminReq,
 } from './auth.validation';
 
+const authCookieOptions = {
+  httpOnly: true,
+  secure: config.node_env === 'production',
+  sameSite: 'lax' as const,
+  path: '/',
+};
+
+/**
+ * The refresh token is random, so a browser also needs the session id to refresh with
+ * cookies alone. Both are httpOnly.
+ */
+const setAuthCookies = (res: Response, refreshToken: string, sessionId: string) => {
+  const options = { ...authCookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 }; // 30 days
+  res.cookie('refreshToken', refreshToken, options);
+  res.cookie('sessionId', sessionId, options);
+};
+
+const clearAuthCookies = (res: Response) => {
+  res.clearCookie('refreshToken', authCookieOptions);
+  res.clearCookie('sessionId', authCookieOptions);
+};
+
 const registerUser = catchAsync(async (req: Request, res: Response) => {
   const userData = req.body as IRegisterUserReq;
   const result = await AuthService.registerUser(userData);
@@ -57,15 +79,9 @@ const loginUser = catchAsync(async (req: Request, res: Response) => {
 
   const result = await AuthService.loginUser(loginData, ip, deviceInfo);
 
-  // Set refresh token in httpOnly cookie
+  // Set refresh token + session id in httpOnly cookies
   if (result?.tokens?.refreshToken) {
-    res.cookie('refreshToken', result.tokens.refreshToken, {
-      httpOnly: true,
-      secure: config.node_env === 'production',
-      sameSite: 'lax' as const,
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: '/',
-    });
+    setAuthCookies(res, result.tokens.refreshToken, result.sessionId);
   }
 
   const isMobileClient = req.headers['x-client-type'] === 'mobile';
@@ -87,7 +103,9 @@ const loginUser = catchAsync(async (req: Request, res: Response) => {
 const refreshToken = catchAsync(async (req: Request, res: Response) => {
   const cookieToken = req.cookies?.refreshToken as string | undefined;
   const bodyToken = (req.body as { refreshToken?: string })?.refreshToken;
-  const bodySessionId = (req.body as { sessionId?: string })?.sessionId;
+  const bodySessionId =
+    (req.body as { sessionId?: string })?.sessionId ||
+    (req.cookies?.sessionId as string | undefined);
 
   const token = bodyToken || cookieToken || '';
   const ip = req.ip || req.socket.remoteAddress;
@@ -102,13 +120,7 @@ const refreshToken = catchAsync(async (req: Request, res: Response) => {
 
   // Rotate refresh token cookie
   if (result?.tokens?.refreshToken) {
-    res.cookie('refreshToken', result.tokens.refreshToken, {
-      httpOnly: true,
-      secure: config.node_env === 'production',
-      sameSite: 'lax' as const,
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+    setAuthCookies(res, result.tokens.refreshToken, result.sessionId);
   }
 
   const isMobileClient = req.headers['x-client-type'] === 'mobile';
@@ -132,12 +144,7 @@ const logoutUser = catchAsync(async (req: Request, res: Response) => {
 
   await AuthService.logoutUser(user, sessionId, deviceToken);
 
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: config.node_env === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-  });
+  clearAuthCookies(res);
 
   sendResponse(res, {
     success: true,
@@ -152,12 +159,7 @@ const logoutAll = catchAsync(async (req: Request, res: Response) => {
 
   await AuthService.logoutAll(user.id);
 
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: config.node_env === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-  });
+  clearAuthCookies(res);
 
   sendResponse(res, {
     success: true,
@@ -212,12 +214,7 @@ const changePassword = catchAsync(async (req: Request, res: Response) => {
   const passwordData = req.body as IChangePasswordReq;
   const result = await AuthService.changePassword(user, passwordData);
 
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: config.node_env === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-  });
+  clearAuthCookies(res);
 
   sendResponse(res, {
     success: true,

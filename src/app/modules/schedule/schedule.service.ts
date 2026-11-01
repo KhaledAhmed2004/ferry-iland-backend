@@ -1,5 +1,11 @@
 import { StatusCodes } from 'http-status-codes';
-import { AccountStatus, RouteStatus, TripStatus, VesselStatus } from '@prisma/client';
+import {
+  AccountStatus,
+  Prisma,
+  RouteStatus,
+  TripStatus,
+  VesselStatus,
+} from '@prisma/client';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
 import { getDynamicVesselImage } from '../../../shared/mediaCatalog';
@@ -35,13 +41,62 @@ const resolveOperatorProfile = async (userId: string) => {
   return operator;
 };
 
+type Db = Prisma.TransactionClient;
+
+/**
+ * Runs `fn` in a transaction holding a per-ferry lock, so two requests for the same
+ * ferry can't both pass the clash check and insert overlapping voyages.
+ */
+const withVesselLock = <T>(ferryId: string, fn: (tx: Db) => Promise<T>) =>
+  prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ferryId}))`;
+    return fn(tx);
+  });
+
+const startOfUtcDay = (date: Date) =>
+  new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+
+const assertNotBlackout = async (
+  db: Db,
+  operatorId: string,
+  ferryId: string,
+  departure: Date,
+) => {
+  const activeOffDay = await db.offDay.findFirst({
+    where: {
+      operatorId,
+      date: startOfUtcDay(departure),
+      OR: [{ ferryId }, { ferryId: null }],
+    },
+  });
+
+  if (activeOffDay) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `Cannot schedule trips on a blackout date: ${activeOffDay.reason}`,
+    );
+  }
+};
+
+const assertWithinCapacity = (seats: number | undefined, capacity: number) => {
+  if (seats !== undefined && seats > capacity) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `availableSeats (${seats}) cannot exceed the vessel capacity (${capacity})`,
+    );
+  }
+};
+
 const verifyVesselAvailability = async (
+  db: Db,
   ferryId: string,
   departureTime: Date,
   arrivalTime: Date,
   excludeScheduleId?: string,
 ) => {
-  const conflictingSchedule = await prisma.schedule.findFirst({
+  const conflictingSchedule = await db.schedule.findFirst({
     where: {
       ferryId,
       status: {
@@ -108,7 +163,10 @@ const createSchedule = async (
   ]);
 
   if (!route || route.operatorId !== operator.id) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Route not found for this operator');
+    throw new ApiError(
+      StatusCodes.NOT_FOUND,
+      'Route not found for this operator',
+    );
   }
 
   if (route.status !== RouteStatus.ACTIVE) {
@@ -119,7 +177,10 @@ const createSchedule = async (
   }
 
   if (!ferry || ferry.operatorId !== operator.id) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Vessel not found for this operator');
+    throw new ApiError(
+      StatusCodes.NOT_FOUND,
+      'Vessel not found for this operator',
+    );
   }
 
   if (ferry.status !== VesselStatus.IN_SERVICE) {
@@ -129,59 +190,41 @@ const createSchedule = async (
     );
   }
 
-  const startOfDay = new Date(
-    Date.UTC(
-      departureTimeDate.getUTCFullYear(),
-      departureTimeDate.getUTCMonth(),
-      departureTimeDate.getUTCDate(),
-      0,
-      0,
-      0,
-      0,
-    ),
-  );
-
-  const activeOffDay = await prisma.offDay.findFirst({
-    where: {
-      operatorId: operator.id,
-      date: startOfDay,
-      OR: [{ ferryId: ferry.id }, { ferryId: null }],
-    },
-  });
-
-  if (activeOffDay) {
-    throw new ApiError(
-      StatusCodes.BAD_REQUEST,
-      `Cannot schedule trips on a blackout date: ${activeOffDay.reason}`,
-    );
-  }
-
-  await verifyVesselAvailability(ferry.id, departureTimeDate, arrivalTimeDate);
-
+  assertWithinCapacity(payload.availableSeats, ferry.capacity);
   const assignedCapacity = payload.availableSeats ?? ferry.capacity;
 
-  return prisma.schedule.create({
-    data: {
-      routeId: payload.routeId,
-      ferryId: payload.ferryId,
-      departureTime: departureTimeDate,
-      arrivalTime: arrivalTimeDate,
-      gate: payload.gate,
-      captain: payload.captain,
-      adultFare: payload.adultFare,
-      childFare: payload.childFare ?? 0,
-      availableSeats: assignedCapacity,
-      status: TripStatus.ON_TIME,
-    },
-    include: {
-      route: {
-        include: {
-          departurePort: true,
-          destinationPort: true,
-        },
+  return withVesselLock(ferry.id, async tx => {
+    await assertNotBlackout(tx, operator.id, ferry.id, departureTimeDate);
+    await verifyVesselAvailability(
+      tx,
+      ferry.id,
+      departureTimeDate,
+      arrivalTimeDate,
+    );
+
+    return tx.schedule.create({
+      data: {
+        routeId: payload.routeId,
+        ferryId: payload.ferryId,
+        departureTime: departureTimeDate,
+        arrivalTime: arrivalTimeDate,
+        gate: payload.gate,
+        captain: payload.captain,
+        adultFare: payload.adultFare,
+        childFare: payload.childFare ?? 0,
+        availableSeats: assignedCapacity,
+        status: TripStatus.ON_TIME,
       },
-      ferry: true,
-    },
+      include: {
+        route: {
+          include: {
+            departurePort: true,
+            destinationPort: true,
+          },
+        },
+        ferry: true,
+      },
+    });
   });
 };
 
@@ -288,12 +331,14 @@ const updateSchedule = async (
 
   const existingSchedule = await prisma.schedule.findUnique({
     where: { id: scheduleId },
-    include: { route: true },
+    include: { route: true, ferry: true },
   });
 
   if (!existingSchedule || existingSchedule.route.operatorId !== operator.id) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Schedule slot not found');
   }
+
+  assertWithinCapacity(payload.availableSeats, existingSchedule.ferry.capacity);
 
   const newDeparture = payload.departureTime
     ? new Date(payload.departureTime)
@@ -302,35 +347,44 @@ const updateSchedule = async (
     ? new Date(payload.arrivalTime)
     : existingSchedule.arrivalTime;
 
-  if (payload.departureTime || payload.arrivalTime) {
-    await verifyVesselAvailability(
-      existingSchedule.ferryId,
-      newDeparture,
-      newArrival,
-      scheduleId,
-    );
-  }
+  return withVesselLock(existingSchedule.ferryId, async tx => {
+    if (payload.departureTime || payload.arrivalTime) {
+      await assertNotBlackout(
+        tx,
+        operator.id,
+        existingSchedule.ferryId,
+        newDeparture,
+      );
+      await verifyVesselAvailability(
+        tx,
+        existingSchedule.ferryId,
+        newDeparture,
+        newArrival,
+        scheduleId,
+      );
+    }
 
-  return prisma.schedule.update({
-    where: { id: scheduleId },
-    data: {
-      departureTime: newDeparture,
-      arrivalTime: newArrival,
-      gate: payload.gate,
-      captain: payload.captain,
-      adultFare: payload.adultFare,
-      childFare: payload.childFare,
-      availableSeats: payload.availableSeats,
-    },
-    include: {
-      route: {
-        include: {
-          departurePort: true,
-          destinationPort: true,
-        },
+    return tx.schedule.update({
+      where: { id: scheduleId },
+      data: {
+        departureTime: newDeparture,
+        arrivalTime: newArrival,
+        gate: payload.gate,
+        captain: payload.captain,
+        adultFare: payload.adultFare,
+        childFare: payload.childFare,
+        availableSeats: payload.availableSeats,
       },
-      ferry: true,
-    },
+      include: {
+        route: {
+          include: {
+            departurePort: true,
+            destinationPort: true,
+          },
+        },
+        ferry: true,
+      },
+    });
   });
 };
 

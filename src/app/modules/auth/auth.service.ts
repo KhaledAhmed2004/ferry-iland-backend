@@ -487,7 +487,11 @@ const logoutUser = async (
 ) => {
   const currentSessionId = sessionId || (user as any).sessionId;
   if (currentSessionId) {
-    await SessionService.revokeSession(currentSessionId, RevocationReason.USER_LOGOUT);
+    // Scoped to the caller: a sessionId from the body must not log out another user.
+    await prisma.session.updateMany({
+      where: { id: currentSessionId, userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: RevocationReason.USER_LOGOUT },
+    });
   }
 
   return { message: 'User logged out successfully.' };

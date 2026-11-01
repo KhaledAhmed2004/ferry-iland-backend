@@ -26,7 +26,8 @@
     "admin:set-credentials": "npx tsx scripts/set-admin-credentials.ts",
     "audit": "node scripts/audit-system.js",
     "media:sync": "node scripts/update-ferry-images.js",
-    "prisma:studio": "npx prisma studio --port 5556"
+    "prisma:studio": "npx prisma studio --port 5556",
+    "test:int": "vitest run --config vitest.integration.config.ts"
   },
   "keywords": [],
   "author": "",

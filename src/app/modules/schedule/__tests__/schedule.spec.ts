@@ -4,8 +4,11 @@ import { RouteStatus, TripStatus, VesselStatus } from '@prisma/client';
 import { ScheduleService } from '../schedule.service';
 import { prisma } from '../../../../shared/prisma';
 
-vi.mock('../../../../shared/prisma', () => ({
-  prisma: {
+vi.mock('../../../../shared/prisma', () => {
+  const prisma: any = {
+    // Schedule writes run inside a per-ferry locked transaction; the mock just runs the callback.
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(),
     operatorProfile: {
       findUnique: vi.fn(),
     },
@@ -32,8 +35,9 @@ vi.mock('../../../../shared/prisma', () => ({
       updateMany: vi.fn(),
       deleteMany: vi.fn(),
     },
-  },
-}));
+  };
+  return { prisma };
+});
 
 describe('ScheduleService Unit Tests', () => {
   const mockOperator = {

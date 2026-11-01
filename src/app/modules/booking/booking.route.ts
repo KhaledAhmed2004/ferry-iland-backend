@@ -19,8 +19,10 @@ const optionalAuth: express.RequestHandler = (req, res, next) => {
   return next();
 };
 
+// Guests may book; a signed-in caller is identified so the booking is linked to their account.
 router.post(
   '/',
+  optionalAuth,
   validateRequest(BookingValidation.createBookingZodSchema),
   BookingController.createBooking,
 );
