@@ -80,6 +80,18 @@ export const FERRY_MEDIA_CATALOG: Record<VesselType, IMediaAsset[]> = {
 };
 
 export const PORT_MEDIA_CATALOG: Record<string, string> = {
+  'Blowing Point, Anguilla':
+    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=800&q=80',
+  'Marigot, Saint Martin':
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+  'Philipsburg, Sint Maarten':
+    'https://images.unsplash.com/photo-1512100356356-de1b84283e18?auto=format&fit=crop&w=800&q=80',
+  'Fort Bay Harbor, Saba':
+    'https://images.unsplash.com/photo-1505705694340-019e1e335916?auto=format&fit=crop&w=800&q=80',
+  'Gallows Bay, Sint Eustatius':
+    'https://images.unsplash.com/photo-1564965474715-acd1c7f02b6b?auto=format&fit=crop&w=800&q=80',
+  'Port Zante, St. Kitts':
+    'https://images.unsplash.com/photo-1656252972929-44002a33859e?auto=format&fit=crop&w=800&q=80',
   'Malé Ferry Terminal':
     'https://images.unsplash.com/photo-1564965474715-acd1c7f02b6b?auto=format&fit=crop&w=800&q=80',
   'Hulhumalé Port':
@@ -92,7 +104,7 @@ export const PORT_MEDIA_CATALOG: Record<string, string> = {
 
 /**
  * Deterministically resolves a verified high-resolution vessel image based on vessel type
- * and a seed string (e.g. vessel name or registration) without any external network latency.
+ * and a seed string (e.g. vessel name or ID) without any external network latency.
  */
 export function getDynamicVesselImage(
   type?: VesselType | string,

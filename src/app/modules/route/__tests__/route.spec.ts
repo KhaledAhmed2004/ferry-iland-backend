@@ -105,12 +105,14 @@ describe('RouteService Unit Tests', () => {
             select: {
               id: true,
               name: true,
+              timeZone: true,
             },
           },
           destinationPort: {
             select: {
               id: true,
               name: true,
+              timeZone: true,
             },
           },
         },

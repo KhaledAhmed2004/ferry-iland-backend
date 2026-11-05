@@ -23,6 +23,7 @@ router.patch(
 router.get(
   '/',
   auth(USER_ROLES.ADMIN),
+  validateRequest(ProviderValidation.listProvidersQueryZodSchema),
   ProviderController.listProviders,
 );
 

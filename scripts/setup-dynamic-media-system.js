@@ -95,7 +95,7 @@ export const DEFAULT_FERRY_IMAGES: IMediaPreset[] = [
 
 /**
  * Deterministically resolves a verified high-resolution vessel image based on vessel type
- * and a seed string (e.g. vessel name, registration, or ID) without any network latency.
+ * and a seed string (e.g. vessel name or ID) without any network latency.
  */
 export function getDynamicVesselImage(type?: string, seedKey?: string): string {
   const normalizedType = (type || "SPEEDBOAT").toUpperCase();
@@ -136,7 +136,7 @@ if (fs.existsSync(operatorFerriesPath)) {
   if (ferry.imageUrl && ferry.imageUrl.trim().startsWith("http")) {
     return ferry.imageUrl.trim();
   }
-  return getDynamicVesselImage(ferry.type, ferry.name || ferry.registration || ferry.id);
+  return getDynamicVesselImage(ferry.type, ferry.name || ferry.id);
 }`;
 
   if (oldGetFerryImageRegex.test(code)) {

@@ -13,6 +13,10 @@ vi.mock('../../../../shared/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    schedule: {
+      count: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -25,6 +29,7 @@ describe('PortService Unit Tests', () => {
     it('creates a port when payload is valid', async () => {
       const payload = {
         name: 'Malé Terminal',
+        timeZone: 'America/Anguilla',
         isActive: true,
       };
 
@@ -123,6 +128,59 @@ describe('PortService Unit Tests', () => {
       expect(prisma.port.update).toHaveBeenCalledWith({
         where: { id: 'port-1' },
         data: { name: 'New' },
+      });
+    });
+
+    describe('time zone change (spec 0003, AC-11)', () => {
+      const existingPort = { id: 'port-1', name: 'Blowing Point', timeZone: 'America/Anguilla' };
+
+      beforeEach(() => {
+        vi.mocked(prisma.port.findUnique).mockResolvedValue(existingPort as any);
+        vi.mocked(prisma.$transaction).mockImplementation(((fn: any) => fn(prisma)) as any);
+        vi.mocked(prisma.port.update).mockImplementation((async (args: any) => ({
+          ...existingPort,
+          ...args.data,
+        })) as any);
+      });
+
+      it('treats the same zone as stored as a no op success', async () => {
+        await PortService.updatePort('port-1', { timeZone: 'America/Anguilla' });
+        expect(prisma.schedule.count).not.toHaveBeenCalled();
+        expect(prisma.port.update).toHaveBeenCalled();
+      });
+
+      it('returns 409 with the count while future trips use the port', async () => {
+        vi.mocked(prisma.schedule.count).mockResolvedValue(1);
+
+        await expect(
+          PortService.updatePort('port-1', { timeZone: 'America/St_Kitts' }),
+        ).rejects.toMatchObject({
+          statusCode: StatusCodes.CONFLICT,
+          message: 'Cannot change time zone: 1 upcoming trip depart from or arrive at this port',
+          data: { field: 'timeZone', upcomingTrips: 1 },
+        });
+        expect(prisma.port.update).not.toHaveBeenCalled();
+
+        const where = vi.mocked(prisma.schedule.count).mock.calls[0][0]!.where as any;
+        expect(where.status).toEqual({ not: 'CANCELLED' });
+        expect(where.route.OR).toEqual([
+          { departurePortId: 'port-1' },
+          { destinationPortId: 'port-1' },
+        ]);
+      });
+
+      it('changes the zone when no future trips use the port', async () => {
+        vi.mocked(prisma.schedule.count).mockResolvedValue(0);
+
+        const result = await PortService.updatePort('port-1', { timeZone: 'America/St_Kitts' });
+
+        expect(result).toMatchObject({ timeZone: 'America/St_Kitts' });
+      });
+
+      it('rejects an invalid zone with 400', async () => {
+        await expect(
+          PortService.updatePort('port-1', { timeZone: 'Mars/Olympus' }),
+        ).rejects.toMatchObject({ statusCode: StatusCodes.BAD_REQUEST });
       });
     });
   });

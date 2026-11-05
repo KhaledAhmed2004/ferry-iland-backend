@@ -64,14 +64,15 @@ export async function createBookableTrip(
     data: { userId: operatorUser.id, companyName: `Ferry Co ${id}`, contactPersonName: 'Test Contact' },
   });
   const [from, to] = await Promise.all([
-    prisma.port.create({ data: { name: `Port A ${id}` } }),
-    prisma.port.create({ data: { name: `Port B ${id}` } }),
+    // Every port needs its IANA zone (spec 0003); AST like the real ports.
+    prisma.port.create({ data: { name: `Port A ${id}`, timeZone: 'America/Anguilla' } }),
+    prisma.port.create({ data: { name: `Port B ${id}`, timeZone: 'America/Anguilla' } }),
   ]);
   const route = await prisma.route.create({
     data: { operatorId: operator.id, departurePortId: from.id, destinationPortId: to.id, durationMinutes: 45 },
   });
   const ferry = await prisma.ferry.create({
-    data: { operatorId: operator.id, name: `Ferry ${id}`, registration: `REG-${id}`, capacity: 100 },
+    data: { operatorId: operator.id, name: `Ferry ${id}`, capacity: 100 },
   });
   const departure = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
   const schedule = await prisma.schedule.create({

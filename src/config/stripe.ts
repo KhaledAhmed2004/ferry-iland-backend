@@ -5,7 +5,9 @@ const stripeKey = process.env.STRIPE_SECRET_KEY;
 
 export const stripe = stripeKey
   ? new Stripe(stripeKey, {
-      apiVersion: '2025-07-30.basil' as Stripe.LatestApiVersion,
+      // Pinned to the version this SDK major ships with (spec 0002). Create the webhook
+      // endpoint on the same version.
+      apiVersion: '2026-10-28.endive',
       typescript: true,
     })
   : (null as unknown as Stripe);
@@ -45,10 +47,18 @@ export const handleStripeError = (error: any): string => {
   }
 };
 
-// Stripe configuration object
+/** Stripe's smallest USD charge. The only amount floor (spec 0002); there is no maximum. */
+export const STRIPE_MINIMUM_AMOUNT_CENTS = 50;
+
+/** The only payment method this integration accepts (spec 0002, value sourcing). */
+export const ALLOWED_PAYMENT_METHOD_TYPES: Stripe.PaymentIntentCreateParams.AllowedPaymentMethodType[] =
+  ['card'];
+
+/** True when the configured key is a live key, so an intent's livemode can be checked against it. */
+export const isLiveStripeKey = (): boolean =>
+  !!stripeKey && (stripeKey.startsWith('sk_live_') || stripeKey.startsWith('rk_live_'));
+
+// Stripe configuration object. The publishable key lives only in the frontend env.
 export const stripeConfig = {
-  publishableKey: process.env.STRIPE_PUBLISHABLE_KEY!,
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
-  minimumAmount: Number(process.env.MINIMUM_PAYMENT_AMOUNT) || 5.0,
-  maximumAmount: Number(process.env.MAXIMUM_PAYMENT_AMOUNT) || 10000.0,
 };

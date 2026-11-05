@@ -231,7 +231,14 @@ const getAllUsers = async (query: Record<string, unknown>) => {
       operatorProfile: true,
     })
     .dateFilter('createdAt')
-    .sort('-createdAt', ['createdAt', 'name', 'email'])
+    .sort('-createdAt', [
+      'createdAt',
+      'name',
+      'email',
+      'phoneNumber',
+      'status',
+      'isEmailVerified',
+    ])
     .paginate();
 
   const { data: users, pagination } = await userQuery.execute();

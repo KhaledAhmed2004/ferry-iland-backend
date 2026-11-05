@@ -80,16 +80,17 @@ export interface IOperatorDepartureQueueItem {
     departurePort: {
       name: string;
       code: string | null;
+      timeZone: string;
     };
     destinationPort: {
       name: string;
       code: string | null;
+      timeZone: string;
     };
   };
   ferry: {
     id: string;
     name: string;
-    registration: string;
     capacity: number;
   };
   capacity: number;
@@ -107,6 +108,7 @@ export interface IOperatorRecentBookingItem {
   leadPassengerEmail: string;
   route: string;
   departureTime: Date;
+  departureTimeZone: string | null;
   pax: number;
   amount: number;
   totalAmount: number;
@@ -170,7 +172,8 @@ export interface IAdminAllTimeMetrics {
 
 export interface IAdminKpiItem {
   value: number;
-  changePercent: number;
+  /** null when the previous period had nothing to compare with. */
+  changePercent: number | null;
   trend: 'up' | 'down' | 'neutral';
   currency?: string;
   subValue?: number;
@@ -185,6 +188,7 @@ export interface IAdminKpis {
     total: number;
     inService: number;
     maintenance: number;
+    /** Share of ferries in service (inService / total * 100). Not a growth figure. */
     changePercent: number;
     trend: 'up' | 'down' | 'neutral';
   };
@@ -195,19 +199,19 @@ export interface IAdminBreakdowns {
     grossSales: number;
     platformCommission: number;
     providerPayout: number;
-    changePercent: number;
+    changePercent: number | null;
   };
   bookings: {
     total: number;
     confirmed: number;
     checkedIn: number;
     cancelled: number;
-    changePercent: number;
+    changePercent: number | null;
   };
   passengers: {
     totalPax: number;
     boardedPax: number;
-    changePercent: number;
+    changePercent: number | null;
   };
   fleet: {
     total: number;

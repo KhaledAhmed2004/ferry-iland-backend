@@ -27,6 +27,8 @@ export interface ITripManifestResponse {
     destinationPort: string;
     departureTime: Date;
     arrivalTime: Date;
+    departureTimeZone: string;
+    arrivalTimeZone: string;
     tripStatus: TripStatus;
     totalPassengers: number;
     boardedPassengers: number;

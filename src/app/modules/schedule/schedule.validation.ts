@@ -1,6 +1,19 @@
 import { z } from 'zod';
 import { TripStatus } from '@prisma/client';
 
+/**
+ * A schedule time: a port local wall time (`2026-11-06T08:30`, read in the route's port zone)
+ * or an exact instant with `Z` or an offset. Kept as text here; the service converts it with the
+ * port zone and then checks arrival after departure (spec 0003, AC-6 and rule 8).
+ */
+const SCHEDULE_TIME =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:[zZ]|[+-]\d{2}:?\d{2})?$/;
+const scheduleTimeSchema = (field: string) =>
+  z
+    .string({ error: `${field} is required` })
+    .trim()
+    .regex(SCHEDULE_TIME, `${field} must be a local date time (YYYY-MM-DDTHH:mm) or an ISO instant`);
+
 const createScheduleZodSchema = z.object({
   body: z
     .object({
@@ -10,12 +23,8 @@ const createScheduleZodSchema = z.object({
       ferryId: z
         .string({ error: 'ferryId is required' })
         .uuid('ferryId must be a valid UUID'),
-      departureTime: z.coerce.date({
-        error: 'departureTime must be a valid ISO date',
-      }),
-      arrivalTime: z.coerce.date({
-        error: 'arrivalTime must be a valid ISO date',
-      }),
+      departureTime: scheduleTimeSchema('departureTime'),
+      arrivalTime: scheduleTimeSchema('arrivalTime'),
       gate: z.string().trim().max(50).optional(),
       captain: z.string().trim().max(100).optional(),
       adultFare: z
@@ -27,41 +36,19 @@ const createScheduleZodSchema = z.object({
         .int()
         .min(1, 'availableSeats must be at least 1')
         .optional(),
-    })
-    .superRefine((data, ctx) => {
-      if (data.departureTime >= data.arrivalTime) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'arrivalTime must be after departureTime',
-          path: ['arrivalTime'],
-        });
-      }
     }),
 });
 
 const updateScheduleZodSchema = z.object({
   body: z
     .object({
-      departureTime: z.coerce.date().optional(),
-      arrivalTime: z.coerce.date().optional(),
+      departureTime: scheduleTimeSchema('departureTime').optional(),
+      arrivalTime: scheduleTimeSchema('arrivalTime').optional(),
       gate: z.string().trim().max(50).optional(),
       captain: z.string().trim().max(100).optional(),
       adultFare: z.number().min(0).optional(),
       childFare: z.number().min(0).optional(),
       availableSeats: z.number().int().min(0).optional(),
-    })
-    .superRefine((data, ctx) => {
-      if (
-        data.departureTime &&
-        data.arrivalTime &&
-        data.departureTime >= data.arrivalTime
-      ) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'arrivalTime must be after departureTime',
-          path: ['arrivalTime'],
-        });
-      }
     }),
 });
 
@@ -92,7 +79,7 @@ const tripSearchQueryZodSchema = z.object({
   query: z
     .object({
       tripType: z
-        .enum(['one-way', 'round-trip'])
+        .enum(['one-way', 'round-trip', 'same-day-return'])
         .default('one-way'),
       from: z.string({ error: 'from port is required' }).trim().min(1),
       to: z.string({ error: 'to port is required' }).trim().min(1),
@@ -131,6 +118,19 @@ const tripSearchQueryZodSchema = z.object({
             path: ['returnDate'],
           });
         }
+      }
+
+      // Same day return comes back on the departure date; returnDate may be left out.
+      if (
+        data.tripType === 'same-day-return' &&
+        data.returnDate &&
+        data.returnDate !== data.departureDate
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'A same day return must come back on the departure date',
+          path: ['returnDate'],
+        });
       }
     }),
 });

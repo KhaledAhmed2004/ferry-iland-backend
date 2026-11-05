@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ADMIN_PAYMENT_SORT_FIELDS } from './admin.interface';
 
 const updateCommissionZodSchema = z
   .object({
@@ -32,6 +33,8 @@ const listPaymentsQueryZodSchema = z.object({
       status: z.string().optional(),
       search: z.string().optional(),
       searchTerm: z.string().optional(),
+      sortBy: z.enum(ADMIN_PAYMENT_SORT_FIELDS).optional(),
+      sortOrder: z.enum(['asc', 'desc']).optional(),
     })
     .optional(),
 });

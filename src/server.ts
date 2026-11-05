@@ -7,6 +7,7 @@ import { seedAdmin } from './DB/seedAdmin';
 import { socketHelper } from './helpers/socketHelper';
 import { errorLogger, logger, notifyCritical } from './shared/logger';
 import { CacheHelper } from './app/shared/CacheHelper';
+import { startHoldExpiryJob } from './app/modules/payment/holdExpiry.job';
 import {
   generateStartupSummary,
   type StartupStatus,
@@ -22,6 +23,8 @@ async function main() {
     const startupStatus = getInitialStartupStatus();
 
     await connectToDatabase(startupStatus);
+    // Spec 0002: frees seats of unpaid holds every minute (off only in NODE_ENV=test).
+    startHoldExpiryJob();
     await seedSystemData();
     initializeCache(startupStatus);
     await validatePerformanceThresholds();

@@ -145,7 +145,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
     it('201 CREATED: Successfully registers a new ferry vessel with valid payload', async () => {
       const payload = {
         name: 'Island Cruiser One',
-        registration: 'REG-CRUISER-001',
         capacity: 150,
         type: VesselType.CATAMARAN,
         status: VesselStatus.IN_SERVICE,
@@ -185,7 +184,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         id: 'ferry-001',
         operatorId: mockOperatorProfile.id,
         name: 'Island Cruiser One',
-        registration: 'REG-CRUISER-001',
         capacity: 150,
         type: 'CATAMARAN',
         status: 'IN_SERVICE',
@@ -204,7 +202,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         {
           id: 'ferry-001',
           name: 'Island Cruiser One',
-          registration: 'REG-CRUISER-001',
           capacity: 150,
           type: VesselType.CATAMARAN,
           status: VesselStatus.IN_SERVICE,
@@ -215,7 +212,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         {
           id: 'ferry-002',
           name: 'Sea Breeze Speedster',
-          registration: 'REG-SPEED-002',
           capacity: 45,
           type: VesselType.SPEEDBOAT,
           status: VesselStatus.MAINTENANCE,
@@ -290,7 +286,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         {
           id: 'ferry-001',
           name: 'Island Cruiser One',
-          registration: 'REG-CRUISER-001',
           capacity: 150,
           type: VesselType.CATAMARAN,
           status: VesselStatus.IN_SERVICE,
@@ -370,7 +365,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         {
           id: 'ferry-001',
           name: 'Island Cruiser One',
-          registration: 'REG-CRUISER-001',
           capacity: 150,
           type: VesselType.CATAMARAN,
           status: VesselStatus.IN_SERVICE,
@@ -381,7 +375,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         {
           id: 'ferry-002',
           name: 'Sea Breeze Speedster',
-          registration: 'REG-SPEED-002',
           capacity: 45,
           type: VesselType.SPEEDBOAT,
           status: VesselStatus.MAINTENANCE,
@@ -477,7 +470,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         id: ferryId,
         operatorId: mockOperatorProfile.id,
         name: 'Island Cruiser One',
-        registration: 'REG-CRUISER-001',
         capacity: 150,
         type: VesselType.CATAMARAN,
         status: VesselStatus.IN_SERVICE,
@@ -526,14 +518,12 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         id: ferryId,
         operatorId: mockOperatorProfile.id,
         name: 'Island Cruiser One',
-        registration: 'REG-CRUISER-001',
         capacity: 150,
         status: VesselStatus.IN_SERVICE,
       } as any);
       vi.mocked(prisma.ferry.update).mockResolvedValue({
         id: ferryId,
         operatorId: mockOperatorProfile.id,
-        registration: 'REG-CRUISER-001',
         ...updatePayload,
       } as any);
 

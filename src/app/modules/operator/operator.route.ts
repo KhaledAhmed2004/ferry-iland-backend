@@ -2,6 +2,7 @@ import express from 'express';
 import { USER_ROLES } from '../../../enums/user';
 import auth from '../../middlewares/auth';
 import validateRequest from '../../middlewares/validateRequest';
+import { fileHandler } from '../../middlewares/fileHandler';
 import { BookingController } from '../booking/booking.controller';
 import { BookingValidation } from '../booking/booking.validation';
 import { DashboardController } from '../dashboard/dashboard.controller';
@@ -30,6 +31,12 @@ router.get(
 router.patch(
   '/settings',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
+  // Optional company logo (multipart field `logo`); its URL lands in req.body.logo.
+  fileHandler({
+    enforceAllowedFields: ['logo'],
+    perFieldMaxCount: { logo: 1 },
+    maxFileSizeMB: 2,
+  }),
   validateRequest(ProviderValidation.updateOperatorSettingsZodSchema),
   ProviderController.updateOperatorSettings,
 );

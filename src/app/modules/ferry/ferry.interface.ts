@@ -2,7 +2,6 @@ import { VesselStatus, VesselType } from '@prisma/client';
 
 export interface ICreateFerryPayload {
   name: string;
-  registration: string;
   capacity: number;
   type?: VesselType;
   status?: VesselStatus;
@@ -12,7 +11,6 @@ export interface ICreateFerryPayload {
 
 export interface IUpdateFerryPayload {
   name?: string;
-  registration?: string;
   capacity?: number;
   type?: VesselType;
   status?: VesselStatus;

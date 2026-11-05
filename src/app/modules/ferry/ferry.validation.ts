@@ -8,12 +8,6 @@ const createFerryZodSchema = validateBody({
     .trim()
     .min(2, 'Ferry name must be at least 2 characters')
     .max(100, 'Ferry name cannot exceed 100 characters'),
-  registration: z
-    .string({ error: 'Registration code is required' })
-    .trim()
-    .min(2, 'Registration code must be at least 2 characters')
-    .max(30, 'Registration code cannot exceed 30 characters')
-    .toUpperCase(),
   capacity: z
     .number({ error: 'Capacity is required' })
     .int('Capacity must be an integer')
@@ -41,13 +35,6 @@ const updateFerryZodSchema = validateBody({
     .trim()
     .min(2, 'Ferry name must be at least 2 characters')
     .max(100, 'Ferry name cannot exceed 100 characters')
-    .optional(),
-  registration: z
-    .string()
-    .trim()
-    .min(2, 'Registration code must be at least 2 characters')
-    .max(30, 'Registration code cannot exceed 30 characters')
-    .toUpperCase()
     .optional(),
   capacity: z
     .number()

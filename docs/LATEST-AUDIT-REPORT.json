@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-10-31T06:17:09.622Z",
-  "auditDurationSec": 12.4,
-  "is100PercentReady": false,
+  "timestamp": "2026-11-05T09:06:28.864Z",
+  "auditDurationSec": 7.7,
+  "is100PercentReady": true,
   "summary": {
-    "routesCount": 138,
+    "routesCount": 142,
     "testSuitePassed": true,
-    "testFilesPassed": 24,
-    "testsPassed": 328,
+    "testFilesPassed": 30,
+    "testsPassed": 427,
     "databaseReady": true,
-    "e2eFlowVerified": false
+    "e2eFlowVerified": true
   },
   "endpoints": {
     "customer": [
@@ -306,6 +306,21 @@
         "method": "DELETE",
         "path": "/:id",
         "file": "src/app/modules/offDay/offDay.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/webhook",
+        "file": "src/app/modules/payment/payment.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/intent",
+        "file": "src/app/modules/payment/payment.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/:bookingId/sync",
+        "file": "src/app/modules/payment/payment.route.ts"
       },
       {
         "method": "POST",
@@ -688,6 +703,11 @@
       },
       {
         "method": "GET",
+        "path": "/payments",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
         "path": "/settings",
         "file": "src/app/modules/admin/admin.route.ts"
       },
@@ -712,20 +732,20 @@
   "database": {
     "connected": true,
     "ports": 6,
-    "operators": 1,
-    "ferries": 5,
-    "routes": 1,
-    "totalSchedules": 21,
-    "futureBookableSchedules": 20,
-    "bookings": 20,
-    "tickets": 20
+    "operators": 6,
+    "ferries": 3,
+    "routes": 14,
+    "totalSchedules": 553,
+    "futureBookableSchedules": 534,
+    "bookings": 41,
+    "tickets": 65
   },
   "tests": {
     "passed": true,
-    "summary": "24 test files, 328 tests passed (100%)"
+    "summary": "30 test files, 427 tests passed (100%)"
   },
   "e2eFlow": {
-    "verified": false,
-    "summary": ""
+    "verified": true,
+    "summary": "Search -> Book -> Seat Check -> QR -> Cancel verified"
   }
 }

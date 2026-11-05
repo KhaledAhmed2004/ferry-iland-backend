@@ -1,4 +1,4 @@
-import { BookingStatus, CabinClass } from '@prisma/client';
+import { BookingStatus, CabinClass, TripType } from '@prisma/client';
 
 export interface IPassengerInput {
   passengerName: string;
@@ -10,6 +10,8 @@ export interface IPassengerInput {
 
 export interface ICreateBookingPayload {
   scheduleId: string;
+  tripType?: TripType;
+  returnScheduleId?: string;
   leadPassengerName: string;
   leadPassengerEmail: string;
   leadPassengerPhone?: string;

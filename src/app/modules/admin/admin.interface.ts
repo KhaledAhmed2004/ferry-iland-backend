@@ -7,3 +7,15 @@ export interface IPlatformSettingsResponse {
   seatHoldMinutes: number;
   updatedAt: Date;
 }
+
+/** Columns the admin payments list can be sorted by (`?sortBy=`). */
+export const ADMIN_PAYMENT_SORT_FIELDS = [
+  'createdAt',
+  'bookingAmount',
+  'commission',
+  'providerAmount',
+  'paymentStatus',
+  'bookingReference',
+] as const;
+
+export type AdminPaymentSortField = (typeof ADMIN_PAYMENT_SORT_FIELDS)[number];

@@ -56,6 +56,8 @@ model OperatorProfile {
   contactPersonName String
   contactEmail      String?
   businessAddress   String?
+  /// Public URL of the company logo (uploaded from operator settings); null = no logo.
+  logoUrl           String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -118,6 +120,8 @@ enum RouteStatus {
 model Port {
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @unique
+  /// IANA zone name (e.g. America/Anguilla). Trip times are shown and read in this zone (spec 0003).
+  timeZone  String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -136,6 +140,11 @@ model Route {
   destinationPort   Port            @relation("DestinationPort", fields: [destinationPortId], references: [id], onDelete: Restrict)
   durationMinutes   Int
   basePrice         Float?          @default(30)
+  /// Bundle fares per passenger from the client fare matrix. null = option not offered on this route.
+  adultRoundTripFare Float?
+  childRoundTripFare Float?
+  adultSameDayFare   Float?
+  childSameDayFare   Float?
   description       String?
   amenities         String[]        @default([])
   imageUrl          String?
@@ -248,6 +257,12 @@ enum TripStatus {
   CANCELLED
 }
 
+enum TripType {
+  ONE_WAY
+  ROUND_TRIP
+  SAME_DAY_RETURN
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -307,7 +322,6 @@ model Ferry {
   operatorId   String          @db.Uuid
   operator     OperatorProfile @relation(fields: [operatorId], references: [id], onDelete: Cascade)
   name         String
-  registration String          @unique
   capacity     Int
   type         VesselType      @default(CATAMARAN)
   status       VesselStatus    @default(IN_SERVICE)
@@ -340,6 +354,7 @@ model Schedule {
   updatedAt      DateTime    @updatedAt
 
   bookings       Booking[]
+  returnBookings Booking[]   @relation("ReturnSchedule")
 
   @@index([routeId, departureTime])
   @@index([ferryId, departureTime])
@@ -352,6 +367,10 @@ model Booking {
   user               User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   scheduleId         String        @db.Uuid
   schedule           Schedule      @relation(fields: [scheduleId], references: [id], onDelete: Restrict)
+  tripType           TripType      @default(ONE_WAY)
+  /// Return leg for ROUND_TRIP / SAME_DAY_RETURN; null for ONE_WAY.
+  returnScheduleId   String?       @db.Uuid
+  returnSchedule     Schedule?     @relation("ReturnSchedule", fields: [returnScheduleId], references: [id], onDelete: Restrict)
   leadPassengerName  String
   leadPassengerEmail String
   leadPassengerPhone String?
@@ -371,6 +390,7 @@ model Booking {
 
   @@index([userId])
   @@index([scheduleId])
+  @@index([returnScheduleId])
   @@index([reference])
   @@index([status, holdExpiresAt])
 }
@@ -451,6 +471,8 @@ model StripeWebhookEvent {
   payment     Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
   receivedAt  DateTime  @default(now())
   processedAt DateTime?
+  /// Last processing error for this event; cleared on a later successful pass (spec 0002, AC-11).
+  error       String?
 
   @@index([paymentId])
 }

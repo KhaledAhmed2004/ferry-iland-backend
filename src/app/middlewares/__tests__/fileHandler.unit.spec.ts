@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { fileHandler, deleteFile } from '../fileHandler';
 import ApiError from '../../../errors/ApiError';
+import fs from 'fs';
+import path from 'path';
 
 // Hoist mock functions for vitest
 const { mockS3Send, mockCloudinaryDestroy } = vi.hoisted(() => ({
@@ -403,6 +405,52 @@ describe('FileHandler Middleware (BDD Test Suite)', () => {
     });
   });
 
+  describe('Feature: Local Mode Temp File Cleanup', () => {
+    const rawPath = path.join('uploads', 'documents', 'raw-multer-file.pdf');
+    const localPdf = (): Express.Multer.File => ({
+      fieldname: 'logo',
+      originalname: 'brochure.pdf',
+      encoding: '7bit',
+      mimetype: 'application/pdf',
+      buffer: undefined as any,
+      size: validPdfBuffer.length,
+      stream: null as any,
+      destination: '',
+      filename: 'raw-multer-file.pdf',
+      path: rawPath,
+    });
+
+    const mockDisk = (content: Buffer) => {
+      vi.spyOn(fs.promises, 'readFile').mockResolvedValue(content as any);
+      vi.spyOn(fs.promises, 'writeFile').mockResolvedValue(undefined);
+      vi.spyOn(fs.promises, 'mkdir').mockResolvedValue(undefined);
+      return vi.spyOn(fs.promises, 'unlink').mockResolvedValue(undefined);
+    };
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("removes multer's raw file once the stored copy is written", async () => {
+      const unlink = mockDisk(validPdfBuffer);
+      req.files = [localPdf()];
+
+      const err = await runMiddleware(fileHandler({ storageMode: 'local' }), req, res);
+
+      expect(err).toBeUndefined();
+      expect(req.body.logo).toMatch(/^http:\/\/localhost:5000\/uploads\/documents\/.+\.pdf$/);
+      expect(unlink).toHaveBeenCalledWith(rawPath);
+    });
+
+    it("removes multer's raw file when the upload is rejected", async () => {
+      const unlink = mockDisk(spoofedFakeBuffer);
+      req.files = [localPdf()];
+
+      const err = await runMiddleware(fileHandler({ storageMode: 'local' }), req, res);
+
+      expect((err as ApiError).statusCode).toBe(StatusCodes.BAD_REQUEST);
+      expect(unlink).toHaveBeenCalledWith(rawPath);
+    });
+  });
+
   // ==========================================
   // 5. STORAGE DELETION & RETRIEVAL
   // ==========================================
@@ -438,6 +486,19 @@ describe('FileHandler Middleware (BDD Test Suite)', () => {
         expect(mockS3Send).toHaveBeenCalledTimes(1);
         const callArg = mockS3Send.mock.calls[0][0];
         expect(callArg.Key).toBe('images/document.pdf');
+      });
+    });
+
+    describe('Given a full local upload URL (http://host/uploads/<key>)', () => {
+      it('Then it should unlink uploads/<key>, not uploads/uploads/<key>', async () => {
+        const unlinkSpy = vi.spyOn(fs.promises, 'unlink').mockResolvedValue(undefined);
+
+        await deleteFile('http://localhost:5000/uploads/images/logo.png', { provider: 'local' });
+
+        expect(unlinkSpy).toHaveBeenCalledWith(
+          path.join(process.cwd(), 'uploads', 'images/logo.png'),
+        );
+        unlinkSpy.mockRestore();
       });
     });
 

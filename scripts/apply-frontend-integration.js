@@ -162,7 +162,6 @@ export interface IBookingDetail {
     ferry: {
       id: string;
       name: string;
-      registration: string;
       capacity: number;
       type: string;
     };

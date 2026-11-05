@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   AccountStatus,
   BoardingStatus,
@@ -82,7 +82,6 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
             ferry: {
               id: 'f-1',
               name: 'Nautilus',
-              registration: 'REG-101',
               capacity: 100,
             },
             bookings: [
@@ -109,11 +108,46 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
             ferry: {
               id: 'f-1',
               name: 'Nautilus',
-              registration: 'REG-101',
               capacity: 100,
             },
           },
-        ] as any);
+        ] as any)
+        // Today's departures at each port's own today (spec 0003, rule 16): the one leaving
+        // now is kept, the one 30 hours away is another local day and is dropped.
+        .mockImplementationOnce((async () => [
+          {
+            id: 'sched-1',
+            departureTime: new Date(),
+            arrivalTime: new Date(),
+            gate: 'Gate 2',
+            captain: 'Capt. Nemo',
+            status: TripStatus.BOARDING,
+            availableSeats: 30,
+            route: {
+              id: 'route-1',
+              departurePort: { name: 'Port A', code: 'PTA', timeZone: 'America/Anguilla' },
+              destinationPort: { name: 'Port B', code: 'PTB', timeZone: 'America/Anguilla' },
+            },
+            ferry: { id: 'f-1', name: 'Nautilus', capacity: 100 },
+            bookings: [{ tickets: [{ id: 't-1' }, { id: 't-2' }, { id: 't-3' }] }],
+          },
+          {
+            id: 'sched-tomorrow',
+            departureTime: new Date(Date.now() + 30 * 3600000),
+            arrivalTime: new Date(Date.now() + 31 * 3600000),
+            gate: 'Gate 1',
+            captain: 'Capt. Nemo',
+            status: TripStatus.ON_TIME,
+            availableSeats: 90,
+            route: {
+              id: 'route-1',
+              departurePort: { name: 'Port A', code: 'PTA', timeZone: 'America/Anguilla' },
+              destinationPort: { name: 'Port B', code: 'PTB', timeZone: 'America/Anguilla' },
+            },
+            ferry: { id: 'f-1', name: 'Nautilus', capacity: 100 },
+            bookings: [],
+          },
+        ]) as any);
 
       // Net revenue comes from stored operator payout cents on collected payments (spec 0001).
       const collected = (amountCents: number) => ({
@@ -156,6 +190,7 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
       expect(overview.kpis.netRevenue.value).toBe(450);
       expect(overview.kpis.netRevenue.comparedPeriod).toBe('yesterday');
       expect(overview.todayDepartures).toHaveLength(1);
+      expect(overview.todayDepartures[0].id ?? 'sched-1').toBe('sched-1');
       expect(overview.todayDepartures[0].bookedSeats).toBe(70);
       expect(overview.todayDepartures[0].availableSeats).toBe(30);
       expect(overview.upcomingTrips).toHaveLength(1);
@@ -190,7 +225,7 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
         .mockResolvedValueOnce(80)  // period confirmed
         .mockResolvedValueOnce(15)  // period checkedIn
         .mockResolvedValueOnce(5)   // period cancelled
-        .mockResolvedValueOnce(50)  // prev bookings count (growth: (100 - 50) / 50 = 100%)
+        .mockResolvedValueOnce(50)  // prev sold bookings (growth: sold 80 + 15 = 95 vs 50 = 90%)
         .mockResolvedValueOnce(500); // all-time bookings
 
       vi.mocked(prisma.ticket.count)
@@ -278,7 +313,7 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
         confirmed: 80,
         checkedIn: 15,
         cancelled: 5,
-        changePercent: 100,
+        changePercent: 90,
       });
       expect(analytics.breakdowns.passengers).toEqual({
         totalPax: 250,
@@ -292,7 +327,11 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
         changePercent: 100,
       });
       expect(analytics.kpis.netRevenue.changePercent).toBe(100);
-      expect(analytics.kpis.totalBookings.changePercent).toBe(100);
+      // Headline bookings = sold only (confirmed + checked in), so the 5 cancelled are left out.
+      expect(analytics.kpis.totalBookings.value).toBe(95);
+      expect(analytics.kpis.totalBookings.changePercent).toBe(90);
+      // Breakdown still reports every reservation, cancelled included.
+      expect(analytics.breakdowns.bookings.total).toBe(100);
       expect(analytics.kpis.totalPassengers.changePercent).toBe(25);
       expect(analytics.recent.providers).toHaveLength(1);
       expect(analytics.recent.providers[0].companyName).toBe('Blue Ocean Lines');
@@ -319,6 +358,138 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
       expect(analytics.period.label).toContain('Last Month');
       expect(analytics.charts.revenueTrend.revenue).toHaveLength(4);
       expect(analytics.charts.revenueTrend.bookings).toHaveLength(4);
+    });
+
+    describe('This Month (month to date)', () => {
+      const mockEmptyPlatform = () => {
+        vi.mocked(prisma.operatorProfile.count).mockResolvedValue(1);
+        vi.mocked(prisma.user.count).mockResolvedValue(1);
+        vi.mocked(prisma.ferry.count).mockResolvedValue(1);
+        vi.mocked(prisma.booking.count).mockResolvedValue(0);
+        vi.mocked(prisma.ticket.count).mockResolvedValue(0);
+        vi.mocked(prisma.payment.aggregate).mockResolvedValue({ _sum: { amountCents: 0 } } as any);
+        vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([]);
+        vi.mocked(prisma.booking.findMany).mockResolvedValue([]);
+      };
+
+      /** The `createdAt` filters the service sent to prisma.booking.count. */
+      const bookingCountRanges = () =>
+        vi
+          .mocked(prisma.booking.count)
+          .mock.calls.map((c) => (c[0] as any)?.where?.createdAt)
+          .filter(Boolean);
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('runs from the 1st of this month to today, with one bar per day early in the month', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-11-05T10:00:00.000Z'));
+        mockEmptyPlatform();
+
+        const analytics = await DashboardService.getAdminAnalyticsOverview('this-month');
+
+        expect(analytics.period.key).toBe('this-month');
+        expect(analytics.period.label).toBe('This Month (Nov 2026)');
+        expect(analytics.period.days).toBe(5);
+        expect(new Date(analytics.period.startDate).toISOString()).toBe('2026-11-01T00:00:00.000Z');
+        expect(new Date(analytics.period.endDate).toISOString()).toBe('2026-11-05T23:59:59.999Z');
+        expect(analytics.charts.revenueTrend.revenue.map((p: any) => p.label)).toEqual([
+          'Nov 1', 'Nov 2', 'Nov 3', 'Nov 4', 'Nov 5'
+        ]);
+
+        // Compared with the same 5 days of last month (Oct 1 up to, not including, Oct 6).
+        expect(bookingCountRanges()).toContainEqual({
+          gte: new Date('2026-10-01T00:00:00.000Z'),
+          lt: new Date('2026-10-06T00:00:00.000Z'),
+        });
+      });
+
+      it('switches to weekly bars after the first week', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-11-20T10:00:00.000Z'));
+        mockEmptyPlatform();
+
+        const analytics = await DashboardService.getAdminAnalyticsOverview('this-month');
+
+        expect(analytics.period.days).toBe(20);
+        expect(analytics.charts.revenueTrend.bookings.map((p: any) => p.label)).toEqual([
+          'W1', 'W2', 'W3'
+        ]);
+      });
+
+      it('never lets the comparison run past the end of a shorter previous month', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-03-31T10:00:00.000Z'));
+        mockEmptyPlatform();
+
+        await DashboardService.getAdminAnalyticsOverview('this-month');
+
+        // February 2026 has 28 days: the comparison stops at Mar 1, not Mar 3.
+        expect(bookingCountRanges()).toContainEqual({
+          gte: new Date('2026-02-01T00:00:00.000Z'),
+          lt: new Date('2026-03-01T00:00:00.000Z'),
+        });
+      });
+    });
+
+    it('returns null growth (not a made up +100%) when the previous period had nothing', async () => {
+      vi.mocked(prisma.operatorProfile.count).mockResolvedValue(1);
+      vi.mocked(prisma.user.count).mockResolvedValue(1);
+      vi.mocked(prisma.ferry.count).mockResolvedValue(1);
+      vi.mocked(prisma.booking.count)
+        .mockResolvedValueOnce(10) // period total
+        .mockResolvedValueOnce(10) // period confirmed
+        .mockResolvedValueOnce(0)  // period checkedIn
+        .mockResolvedValueOnce(0)  // period cancelled
+        .mockResolvedValueOnce(0)  // prev bookings count: nothing to compare with
+        .mockResolvedValueOnce(10); // all-time bookings
+      vi.mocked(prisma.ticket.count)
+        .mockResolvedValueOnce(20) // period pax
+        .mockResolvedValueOnce(0)  // period boarded
+        .mockResolvedValueOnce(0)  // prev pax
+        .mockResolvedValueOnce(20); // all-time pax
+      vi.mocked(prisma.payment.aggregate)
+        .mockResolvedValueOnce({
+          _sum: { amountCents: 50000, platformCommissionCents: 5000, operatorPayoutCents: 45000 },
+        } as any)
+        .mockResolvedValueOnce({ _sum: { amountCents: 0 } } as any) // prev gross
+        .mockResolvedValueOnce({ _sum: { amountCents: 50000 } } as any);
+      vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([]);
+      vi.mocked(prisma.booking.findMany).mockResolvedValue([]);
+
+      const analytics = await DashboardService.getAdminAnalyticsOverview(30);
+
+      expect(analytics.kpis.netRevenue.changePercent).toBeNull();
+      expect(analytics.kpis.netRevenue.trend).toBe('neutral');
+      expect(analytics.kpis.totalBookings.changePercent).toBeNull();
+      expect(analytics.kpis.totalPassengers.changePercent).toBeNull();
+      expect(analytics.breakdowns.financials.changePercent).toBeNull();
+      expect(analytics.breakdowns.bookings.changePercent).toBeNull();
+      expect(analytics.breakdowns.passengers.changePercent).toBeNull();
+    });
+
+    it("counts headline passengers and previous-period figures from sold bookings only", async () => {
+      vi.mocked(prisma.operatorProfile.count).mockResolvedValue(1);
+      vi.mocked(prisma.user.count).mockResolvedValue(1);
+      vi.mocked(prisma.ferry.count).mockResolvedValue(1);
+      vi.mocked(prisma.booking.count).mockResolvedValue(0);
+      vi.mocked(prisma.ticket.count).mockResolvedValue(0);
+      vi.mocked(prisma.payment.aggregate).mockResolvedValue({ _sum: { amountCents: 0 } } as any);
+      vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([]);
+      vi.mocked(prisma.booking.findMany).mockResolvedValue([]);
+
+      await DashboardService.getAdminAnalyticsOverview(30);
+
+      const sold = { in: [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN] };
+      const ticketWheres = vi.mocked(prisma.ticket.count).mock.calls.map((c: any) => c[0]?.where);
+      // [0] period pax, [2] previous pax: cancelled bookings are not travelling.
+      expect(ticketWheres[0].booking.status).toEqual(sold);
+      expect(ticketWheres[2].booking.status).toEqual(sold);
+      const bookingWheres = vi.mocked(prisma.booking.count).mock.calls.map((c: any) => c[0]?.where);
+      // [4] previous bookings: compared like with like against the sold headline.
+      expect(bookingWheres[4].status).toEqual(sold);
     });
   });
 });

@@ -2,12 +2,34 @@ import { AccountStatus, Prisma, TripStatus } from '@prisma/client';
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
+import { logger } from '../../../shared/logger';
+import { deleteFile } from '../../middlewares/fileHandler';
 import { RevocationReason } from '../session/session.service';
 import {
   IOperatorSettingsUpdatePayload,
   IProviderFilterRequest,
   IProviderStatusUpdatePayload,
+  ProviderSortField,
 } from './provider.interface';
+
+const buildProviderOrderBy = (
+  sortBy: ProviderSortField = 'createdAt',
+  sortOrder: 'asc' | 'desc' = 'desc',
+): Prisma.OperatorProfileOrderByWithRelationInput[] => {
+  const primary: Record<
+    ProviderSortField,
+    Prisma.OperatorProfileOrderByWithRelationInput
+  > = {
+    createdAt: { createdAt: sortOrder },
+    companyName: { companyName: sortOrder },
+    contactPersonName: { contactPersonName: sortOrder },
+    status: { user: { status: sortOrder } },
+    ferriesCount: { ferries: { _count: sortOrder } },
+    routesCount: { routes: { _count: sortOrder } },
+  };
+  // Tie-breakers keep page boundaries stable when sort values repeat.
+  return [primary[sortBy], { createdAt: 'desc' }, { id: 'asc' }];
+};
 
 const listProviders = async (filters: IProviderFilterRequest) => {
   const page = Number(filters.page || 1);
@@ -25,8 +47,15 @@ const listProviders = async (filters: IProviderFilterRequest) => {
   if (filters.searchTerm) {
     whereConditions.OR = [
       { companyName: { contains: filters.searchTerm, mode: 'insensitive' } },
-      { contactPersonName: { contains: filters.searchTerm, mode: 'insensitive' } },
-      { user: { email: { contains: filters.searchTerm, mode: 'insensitive' } } },
+      {
+        contactPersonName: {
+          contains: filters.searchTerm,
+          mode: 'insensitive',
+        },
+      },
+      {
+        user: { email: { contains: filters.searchTerm, mode: 'insensitive' } },
+      },
     ];
   }
 
@@ -36,7 +65,7 @@ const listProviders = async (filters: IProviderFilterRequest) => {
       where: whereConditions,
       skip,
       take: limit,
-      orderBy: { createdAt: filters.sortOrder === 'asc' ? 'asc' : 'desc' },
+      orderBy: buildProviderOrderBy(filters.sortBy, filters.sortOrder),
       include: {
         user: {
           select: {
@@ -63,6 +92,7 @@ const listProviders = async (filters: IProviderFilterRequest) => {
     contactPersonName: p.contactPersonName,
     contactEmail: p.contactEmail,
     businessAddress: p.businessAddress,
+    logoUrl: p.logoUrl,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     user: p.user,
@@ -119,7 +149,10 @@ const getProviderById = async (providerId: string) => {
   });
 
   if (!provider) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Ferry provider profile not found');
+    throw new ApiError(
+      StatusCodes.NOT_FOUND,
+      'Ferry provider profile not found',
+    );
   }
 
   return provider;
@@ -135,7 +168,10 @@ const updateProviderStatus = async (
   });
 
   if (!provider) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Ferry provider profile not found');
+    throw new ApiError(
+      StatusCodes.NOT_FOUND,
+      'Ferry provider profile not found',
+    );
   }
 
   return prisma.$transaction(async tx => {
@@ -160,6 +196,8 @@ const updateProviderStatus = async (
           ferry: { operatorId: providerId },
           departureTime: { gt: now },
           bookings: { none: {} },
+          // A schedule booked as someone's return leg is booked too.
+          returnBookings: { none: {} },
           status: { not: TripStatus.CANCELLED },
         },
         select: { id: true },
@@ -239,13 +277,25 @@ const updateOperatorSettings = async (
     );
   }
 
-  return prisma.operatorProfile.update({
+  if (payload.logo && !isImageUploadUrl(payload.logo)) {
+    await removeStoredLogo(payload.logo);
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Logo must be a PNG, JPG or WebP image',
+    );
+  }
+
+  // A new upload replaces the logo; removeLogo clears it. Otherwise it stays as is.
+  const nextLogoUrl = payload.logo ?? (payload.removeLogo ? null : undefined);
+
+  const updatedProfile = await prisma.operatorProfile.update({
     where: { userId },
     data: {
       companyName: payload.companyName,
       contactPersonName: payload.contactPersonName,
       contactEmail: payload.contactEmail,
       businessAddress: payload.businessAddress,
+      logoUrl: nextLogoUrl,
     },
     include: {
       user: {
@@ -258,6 +308,33 @@ const updateOperatorSettings = async (
       },
     },
   });
+
+  // The old file is only removed once the new value is saved.
+  if (
+    nextLogoUrl !== undefined &&
+    existingProfile.logoUrl &&
+    existingProfile.logoUrl !== nextLogoUrl
+  ) {
+    await removeStoredLogo(existingProfile.logoUrl);
+  }
+
+  return updatedProfile;
+};
+
+/** fileHandler stores images under an `images/` key; anything else (PDF, video) is not a logo. */
+const isImageUploadUrl = (url: string) => url.includes('/images/');
+
+/** Best-effort delete of a stored logo; a missing file must not fail the request. */
+const removeStoredLogo = async (url: string) => {
+  try {
+    await deleteFile(url, {
+      provider: url.includes('/uploads/') ? 'local' : undefined,
+    });
+  } catch (error) {
+    logger.warn(
+      `Could not delete old operator logo ${url}: ${(error as Error).message}`,
+    );
+  }
 };
 
 export const ProviderService = {

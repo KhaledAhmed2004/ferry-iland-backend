@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BookingStatus, CabinClass } from '@prisma/client';
+import { BookingStatus, CabinClass, TripType } from '@prisma/client';
 
 const passengerInputZodSchema = z.object({
   passengerName: z
@@ -40,6 +40,16 @@ const createBookingZodSchema = z.object({
       scheduleId: z
         .string({ error: 'scheduleId is required' })
         .uuid('scheduleId must be a valid UUID'),
+      tripType: z
+        .enum(TripType, {
+          error: 'tripType must be ONE_WAY, ROUND_TRIP, or SAME_DAY_RETURN',
+        })
+        .optional()
+        .default(TripType.ONE_WAY),
+      returnScheduleId: z
+        .string()
+        .uuid('returnScheduleId must be a valid UUID')
+        .optional(),
       leadPassengerName: z
         .string({ error: 'Lead passenger name is required' })
         .trim()
@@ -75,6 +85,22 @@ const createBookingZodSchema = z.object({
           code: 'custom',
           message: `Expected ${totalRequiredPassengers} passenger details, but received ${data.passengers.length}`,
           path: ['passengers'],
+        });
+      }
+
+      if (data.tripType === TripType.ONE_WAY && data.returnScheduleId) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'A one way booking cannot have a returnScheduleId',
+          path: ['returnScheduleId'],
+        });
+      }
+
+      if (data.tripType !== TripType.ONE_WAY && !data.returnScheduleId) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'returnScheduleId is required for a return trip',
+          path: ['returnScheduleId'],
         });
       }
     }),

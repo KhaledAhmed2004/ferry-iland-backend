@@ -10,6 +10,8 @@ export default defineConfig({
       DATABASE_URL: testDatabaseUrl(),
       NODE_ENV: 'test',
       PAYMENTS_ENABLED: 'false',
+      // Far from the Caribbean ports so server zone leaks fail tests (spec 0003).
+      TZ: 'Asia/Dhaka',
     },
     // Every file truncates the same database — run files one at a time.
     fileParallelism: false,

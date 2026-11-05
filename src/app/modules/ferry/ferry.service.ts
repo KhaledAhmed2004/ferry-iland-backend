@@ -34,17 +34,6 @@ const resolveOperatorProfile = async (userId: string) => {
 const createFerry = async (userId: string, payload: ICreateFerryPayload) => {
   const operator = await resolveOperatorProfile(userId);
 
-  const existingFerryWithRegistration = await prisma.ferry.findUnique({
-    where: { registration: payload.registration },
-  });
-
-  if (existingFerryWithRegistration) {
-    throw new ApiError(
-      StatusCodes.CONFLICT,
-      `Vessel registration '${payload.registration}' is already registered`,
-    );
-  }
-
   return prisma.ferry.create({
     data: {
       operatorId: operator.id,
@@ -79,7 +68,6 @@ const listOperatorFerries = async (
   if (options.search) {
     whereClause.OR = [
       { name: { contains: options.search, mode: 'insensitive' } },
-      { registration: { contains: options.search, mode: 'insensitive' } },
     ];
   }
 
@@ -161,22 +149,6 @@ const updateFerry = async (
 
   if (!existingFerry || existingFerry.operatorId !== operator.id) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ferry vessel not found');
-  }
-
-  if (
-    payload.registration &&
-    payload.registration !== existingFerry.registration
-  ) {
-    const registrationCollision = await prisma.ferry.findUnique({
-      where: { registration: payload.registration },
-    });
-
-    if (registrationCollision) {
-      throw new ApiError(
-        StatusCodes.CONFLICT,
-        `Vessel registration '${payload.registration}' is already registered`,
-      );
-    }
   }
 
   return prisma.ferry.update({

@@ -11,6 +11,7 @@ import {
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
+import { localDate, portToday } from '../../../shared/portTime';
 import { PrismaAnalyticsBuilder } from '../../builder';
 import {
   IAdminAnalyticsOverview,
@@ -409,16 +410,17 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
       departurePort: {
         name: s.route.departurePort.name,
         code: s.route.departurePort.code,
+        timeZone: s.route.departurePort.timeZone,
       },
       destinationPort: {
         name: s.route.destinationPort.name,
         code: s.route.destinationPort.code,
+        timeZone: s.route.destinationPort.timeZone,
       },
     },
     ferry: {
       id: s.ferry.id,
       name: s.ferry.name,
-      registration: s.ferry.registration,
       capacity: s.ferry.capacity,
     },
     capacity: s.ferry.capacity,
@@ -438,6 +440,8 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
       ? `${b.schedule.route.departurePort?.name || ''} → ${b.schedule.route.destinationPort?.name || ''}`
       : 'Route',
     departureTime: b.schedule?.departureTime || b.createdAt || new Date(),
+    // Departure port zone for dock local display (spec 0003); null when the booking has no trip.
+    departureTimeZone: b.schedule?.route?.departurePort?.timeZone ?? null,
     pax:
       Array.isArray(b.tickets) && b.tickets.length > 0
         ? b.tickets.length
@@ -483,24 +487,101 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
         'yesterday',
       ),
     },
-    todayDepartures: todaySchedules.slice(0, 5).map(mapScheduleToQueueItem),
+    todayDepartures: (await findTodayDeparturesAtPorts(operator.id, now)).map(mapScheduleToQueueItem),
     upcomingTrips: upcomingSchedules.map(mapScheduleToQueueItem),
     recentBookings: recentBookings.slice(0, 5).map(mapBookingToRecentItem),
   };
 };
 
-const calculateGrowthRate = (current: number, previous: number): number => {
+/**
+ * Today's departures by each departure port's own today, not the UTC day (spec 0003, rule 16).
+ * A UTC window padded by 14 hours covers every zone; each trip then keeps only if its local
+ * date at its departure port is that port's today. The other overview counters stay on UTC.
+ */
+const findTodayDeparturesAtPorts = async (operatorId: string, now: Date) => {
+  const padMs = 14 * 60 * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const candidates = await prisma.schedule.findMany({
+    where: {
+      ferry: { operatorId },
+      departureTime: { gte: new Date(now.getTime() - dayMs - padMs), lte: new Date(now.getTime() + dayMs + padMs) },
+    },
+    include: {
+      route: { include: { departurePort: true, destinationPort: true } },
+      ferry: true,
+      bookings: {
+        where: { status: SOLD_BOOKING_STATUS_FILTER },
+        select: { tickets: { select: { id: true } } },
+      },
+    },
+    orderBy: { departureTime: 'asc' },
+  });
+
+  return candidates
+    .filter(s => {
+      const zone = s.route.departurePort.timeZone;
+      return localDate(s.departureTime, zone) === portToday(zone, now);
+    })
+    .slice(0, 5);
+};
+
+/**
+ * Percent change against the previous period. Returns null when the previous period had
+ * nothing to compare with: a made up "+100%" would tell the admin the figure doubled.
+ */
+const calculateGrowthRate = (current: number, previous: number): number | null => {
   if (previous === 0) {
-    return current > 0 ? 100 : 0;
+    return null;
   }
   const rate = ((current - previous) / previous) * 100;
   return Number(rate.toFixed(1));
 };
 
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const resolvePeriodRange = (periodParam: string | number = 30) => {
   const now = new Date();
   const str = String(periodParam).trim().toLowerCase();
 
+  // Month to date: the 1st of this month through today, compared with the same number of
+  // days at the start of last month (clamped to last month's end, e.g. Mar 31 vs Feb 28).
+  if (str === 'this-month' || str === 'this_month' || str === 'mtd') {
+    const curYear = now.getUTCFullYear();
+    const curMonth = now.getUTCMonth();
+
+    const currentStart = new Date(Date.UTC(curYear, curMonth, 1, 0, 0, 0, 0));
+    const currentEnd = new Date(
+      Date.UTC(curYear, curMonth, now.getUTCDate(), 23, 59, 59, 999),
+    );
+    const daysElapsed = now.getUTCDate();
+
+    // prevEnd is exclusive (queried with `lt`); never past the start of this month.
+    const prevStart = new Date(Date.UTC(curYear, curMonth - 1, 1, 0, 0, 0, 0));
+    const prevEnd = new Date(
+      Math.min(prevStart.getTime() + daysElapsed * DAY_MS, currentStart.getTime()),
+    );
+
+    // Up to a week in: one bar per day. After that: one bar per (roughly) week so far.
+    const isDaily = daysElapsed <= 7;
+
+    return {
+      key: 'this-month',
+      label: `This Month (${MONTH_NAMES[curMonth]} ${curYear})`,
+      currentStart,
+      currentEnd,
+      prevStart,
+      prevEnd,
+      bucketType: (isDaily ? 'daily' : 'weekly') as 'daily' | 'weekly',
+      bucketCount: isDaily ? daysElapsed : Math.ceil(daysElapsed / 7),
+      days: daysElapsed,
+    };
+  }
+
+  // Kept for API callers that still send it; the dashboard now offers "This Month" instead.
   if (str === 'month' || str === 'last-month' || str === 'last_month') {
     const curYear = now.getUTCFullYear();
     const curMonth = now.getUTCMonth(); // 0-11
@@ -511,13 +592,9 @@ const resolvePeriodRange = (periodParam: string | number = 30) => {
     const prevStart = new Date(Date.UTC(curYear, curMonth - 2, 1, 0, 0, 0, 0));
     const prevEnd = new Date(Date.UTC(curYear, curMonth - 1, 0, 23, 59, 59, 999));
 
-    const monthNames = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
     const prevMonthIndex = currentStart.getUTCMonth();
     const prevMonthYear = currentStart.getUTCFullYear();
-    const label = `Last Month (${monthNames[prevMonthIndex]} ${prevMonthYear})`;
+    const label = `Last Month (${MONTH_NAMES[prevMonthIndex]} ${prevMonthYear})`;
 
     return {
       key: 'month',
@@ -589,7 +666,12 @@ const generateChartBuckets = (
 
   const buckets = Array.from({ length: bucketCount }, (_, i) => {
     let label = `W${i + 1}`;
-    if (key === '7d') {
+    if (key === 'this-month' && periodRange.bucketType === 'daily') {
+      // Whole days from the 1st: the inclusive 23:59:59.999 end makes each bucket a hair
+      // shorter than a day, so `i * bucketDuration` would land just before midnight.
+      const bucketDate = new Date(startMs + i * DAY_MS);
+      label = `${MONTH_NAMES[bucketDate.getUTCMonth()]} ${bucketDate.getUTCDate()}`;
+    } else if (key === '7d') {
       const bucketDate = new Date(startMs + i * bucketDuration);
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       label = dayNames[bucketDate.getUTCDay()] || `Day ${i + 1}`;
@@ -720,10 +802,10 @@ const getAdminAnalyticsOverview = async (
       },
     }),
 
-    // Period Tickets
+    // Period Tickets: only passengers on sold bookings (cancelled ones are not travelling).
     prisma.ticket.count({
       where: {
-        booking: { status: COUNTED_BOOKING_STATUS_FILTER },
+        booking: { status: SOLD_BOOKING_STATUS_FILTER },
         createdAt: { gte: currentStart, lte: currentEnd },
       },
     }),
@@ -751,16 +833,16 @@ const getAdminAnalyticsOverview = async (
       },
     }),
 
-    // Previous Period for Growth
+    // Previous Period for Growth: same "sold" rule as the KPIs, so growth compares like with like.
     prisma.booking.count({
       where: {
-        status: COUNTED_BOOKING_STATUS_FILTER,
+        status: SOLD_BOOKING_STATUS_FILTER,
         createdAt: { gte: prevStart, lt: prevEnd },
       },
     }),
     prisma.ticket.count({
       where: {
-        booking: { status: COUNTED_BOOKING_STATUS_FILTER },
+        booking: { status: SOLD_BOOKING_STATUS_FILTER },
         createdAt: { gte: prevStart, lt: prevEnd },
       },
     }),
@@ -850,7 +932,10 @@ const getAdminAnalyticsOverview = async (
   const prevGross = centsToDollars(prevFinancialAgg._sum.amountCents);
 
   const revenueGrowth = calculateGrowthRate(grossSales, prevGross);
-  const bookingsGrowth = calculateGrowthRate(periodTotalBookings, prevBookingsCount);
+  // KPI bookings count what was actually sold, matching revenue. Cancelled ones stay visible
+  // in breakdowns.bookings (total / cancelled), not in the headline number.
+  const periodSoldBookings = periodConfirmedBookings + periodCheckedInBookings;
+  const bookingsGrowth = calculateGrowthRate(periodSoldBookings, prevBookingsCount);
   const passengersGrowth = calculateGrowthRate(periodTotalPax, prevPaxCount);
 
   const chartData = generateChartBuckets(period, periodBookingsForChart || []);
@@ -859,7 +944,8 @@ const getAdminAnalyticsOverview = async (
   const fleetServiceRate =
     totalFerries > 0 ? Number(((inServiceFerries / totalFerries) * 100).toFixed(1)) : 100;
 
-  const resolveTrend = (percent: number): 'up' | 'down' | 'neutral' => {
+  const resolveTrend = (percent: number | null): 'up' | 'down' | 'neutral' => {
+    if (percent === null) return 'neutral';
     if (percent > 0) return 'up';
     if (percent < 0) return 'down';
     return 'neutral';
@@ -913,7 +999,7 @@ const getAdminAnalyticsOverview = async (
         label: 'Net Platform Revenue',
       },
       totalBookings: {
-        value: periodTotalBookings,
+        value: periodSoldBookings,
         changePercent: bookingsGrowth,
         trend: resolveTrend(bookingsGrowth),
         label: 'Total Bookings',

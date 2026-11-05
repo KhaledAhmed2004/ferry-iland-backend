@@ -100,6 +100,8 @@ describe('BookingService Unit Tests', () => {
     childFare: 15,
     availableSeats: 10,
     status: TripStatus.ON_TIME,
+    // Comfortably in the future so the "already departed" guard never trips by accident.
+    departureTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     route: {
       operatorId: 'op-1',
       departurePort: { name: 'Malé' },
@@ -295,6 +297,21 @@ describe('BookingService Unit Tests', () => {
         statusCode: StatusCodes.BAD_REQUEST,
         message: 'Cannot book tickets on a departed or cancelled trip',
       });
+    });
+
+    it('throws 400 when the departure time has passed even though the status is still ON_TIME', async () => {
+      primeCreateMocks({
+        ...mockSchedule,
+        status: TripStatus.ON_TIME,
+        departureTime: new Date(Date.now() - 60 * 1000),
+      });
+
+      await expect(BookingService.createBooking('user-1', bookingPayload)).rejects.toMatchObject({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: 'This trip has already departed',
+      });
+      expect(prisma.schedule.updateMany).not.toHaveBeenCalled();
+      expect(prisma.booking.create).not.toHaveBeenCalled();
     });
   });
 

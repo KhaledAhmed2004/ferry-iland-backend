@@ -1,6 +1,6 @@
 import { PaymentProvider, PaymentStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../../shared/prisma';
-import { IPlatformSettingsResponse } from './admin.interface';
+import { AdminPaymentSortField, IPlatformSettingsResponse } from './admin.interface';
 import { UpdateCommissionDTO, UpdatePlatformDTO } from './admin.validation';
 
 export interface IAdminPaymentsFilterOptions {
@@ -9,7 +9,25 @@ export interface IAdminPaymentsFilterOptions {
   status?: string;
   search?: string;
   searchTerm?: string;
+  sortBy?: AdminPaymentSortField;
+  sortOrder?: 'asc' | 'desc';
 }
+
+const buildPaymentOrderBy = (
+  sortBy: AdminPaymentSortField = 'createdAt',
+  sortOrder: 'asc' | 'desc' = 'desc',
+): Prisma.PaymentOrderByWithRelationInput[] => {
+  const primary: Record<AdminPaymentSortField, Prisma.PaymentOrderByWithRelationInput> = {
+    createdAt: { createdAt: sortOrder },
+    bookingAmount: { amountCents: sortOrder },
+    commission: { platformCommissionCents: sortOrder },
+    providerAmount: { operatorPayoutCents: sortOrder },
+    paymentStatus: { status: sortOrder },
+    bookingReference: { booking: { reference: sortOrder } },
+  };
+  // Tie-breakers keep page boundaries stable when sort values repeat.
+  return [primary[sortBy], { createdAt: 'desc' }, { id: 'asc' }];
+};
 
 const centsToDollars = (cents: number | null | undefined) =>
   Number(((cents ?? 0) / 100).toFixed(2));
@@ -114,7 +132,7 @@ const getAdminPayments = async (options: IAdminPaymentsFilterOptions = {}) => {
         where: whereClause,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: buildPaymentOrderBy(options.sortBy, options.sortOrder),
         include: {
           booking: {
             include: {

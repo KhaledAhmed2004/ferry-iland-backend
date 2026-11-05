@@ -10,14 +10,30 @@ export interface IOperatorSettingsUpdatePayload {
   contactPersonName?: string;
   contactEmail?: string;
   businessAddress?: string;
+  /** Set by fileHandler from the uploaded `logo` file: the stored file's public URL. */
+  logo?: string;
+  /** true clears the current logo. */
+  removeLogo?: boolean;
 }
+
+/** Columns the admin operator list can be sorted by (`?sortBy=`). */
+export const PROVIDER_SORT_FIELDS = [
+  'createdAt',
+  'companyName',
+  'contactPersonName',
+  'status',
+  'ferriesCount',
+  'routesCount',
+] as const;
+
+export type ProviderSortField = (typeof PROVIDER_SORT_FIELDS)[number];
 
 export interface IProviderFilterRequest {
   searchTerm?: string;
   status?: AccountStatus;
   page?: number;
   limit?: number;
-  sortBy?: string;
+  sortBy?: ProviderSortField;
   sortOrder?: 'asc' | 'desc';
 }
 

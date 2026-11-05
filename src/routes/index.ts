@@ -19,6 +19,7 @@ import { OffDayRoutes } from '../app/modules/offDay/offDay.route';
 import { ProviderRoutes } from '../app/modules/provider/provider.route';
 import { OperatorRoutes } from '../app/modules/operator/operator.route';
 import { AdminRoutes } from '../app/modules/admin/admin.route';
+import { PaymentRoutes } from '../app/modules/payment/payment.route';
 
 const router = express.Router();
 
@@ -114,6 +115,10 @@ const apiRoutes = [
   {
     path: '/faqs',
     route: FaqRoutes,
+  },
+  {
+    path: '/payments',
+    route: PaymentRoutes,
   },
 ];
 

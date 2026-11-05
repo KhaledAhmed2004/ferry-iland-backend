@@ -817,22 +817,31 @@ export const fileHandler = (
                 fileExtension,
               );
 
-              const { buffer: processedBuffer, mimeType: finalMimeType } =
-                await prepareFileBuffer(
-                  file,
-                  resolvedOptions.storageMode,
-                  resolvedOptions.imageMaxWidth,
-                );
+              let publicAccessUrl: string;
+              try {
+                const { buffer: processedBuffer, mimeType: finalMimeType } =
+                  await prepareFileBuffer(
+                    file,
+                    resolvedOptions.storageMode,
+                    resolvedOptions.imageMaxWidth,
+                  );
 
-              const publicAccessUrl = await persistFileToStorage(
-                storageProvider,
-                resolvedOptions.storageMode,
-                processedBuffer,
-                storageKey,
-                targetFolder,
-                finalMimeType,
-                effectiveBaseUrl,
-              );
+                publicAccessUrl = await persistFileToStorage(
+                  storageProvider,
+                  resolvedOptions.storageMode,
+                  processedBuffer,
+                  storageKey,
+                  targetFolder,
+                  finalMimeType,
+                  effectiveBaseUrl,
+                );
+              } finally {
+                // In local mode multer first writes the raw upload to disk; the stored copy
+                // lives under storageKey, so the raw file is always temporary.
+                if (resolvedOptions.storageMode === 'local' && file.path) {
+                  await fs.promises.unlink(file.path).catch(() => undefined);
+                }
+              }
 
               stagedStorageKeys.push(storageKey);
               uploadedUrls.push(publicAccessUrl);
@@ -891,6 +900,12 @@ const extractStorageKeyFromTarget = (targetPathOrUrl: string): string => {
         return pathnameWithoutLeadingSlash.slice(
           configuredBucketName.length + 1,
         );
+      }
+
+      // Local files are served at <origin>/uploads/<storageKey>; the leading slash is
+      // already stripped here, so also match a pathname that starts with "uploads/".
+      if (pathnameWithoutLeadingSlash.startsWith('uploads/')) {
+        return pathnameWithoutLeadingSlash.slice('uploads/'.length);
       }
 
       const containsLocalUploadsSegment =

@@ -1,4 +1,4 @@
-import { TripStatus } from '@prisma/client';
+import { TripStatus, TripType } from '@prisma/client';
 
 export interface ICreateSchedulePayload {
   routeId: string;
@@ -36,7 +36,7 @@ export interface IScheduleFilterOptions {
 }
 
 export interface ITripSearchQuery {
-  tripType: 'one-way' | 'round-trip';
+  tripType: 'one-way' | 'round-trip' | 'same-day-return';
   from: string;
   to: string;
   departureDate: string;
@@ -64,6 +64,24 @@ export interface ISearchedTripResult {
   departurePortId?: string;
   destinationPort?: string;
   destinationPortId?: string;
+  /** Full ISO times and operator, so the client can pair an outbound with a valid return. */
+  departureAt: string;
+  arrivalAt: string;
+  /** IANA zones of the departure and destination ports (spec 0003). */
+  departureTimeZone: string;
+  arrivalTimeZone: string;
+  operatorId: string;
+  /** Price for the searched trip type (round trip / same day bundle, or one way). */
+  fareQuote: ITripFareQuote;
+}
+
+export interface ITripFareQuote {
+  tripType: TripType;
+  /** false when this route does not offer the searched trip type. */
+  available: boolean;
+  pricePerAdult: number | null;
+  pricePerChild: number | null;
+  totalPrice: number | null;
 }
 
 export interface ITripSearchResponse {

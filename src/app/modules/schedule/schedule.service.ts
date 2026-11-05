@@ -4,11 +4,19 @@ import {
   Prisma,
   RouteStatus,
   TripStatus,
+  TripType,
   VesselStatus,
 } from '@prisma/client';
 import ApiError from '../../../errors/ApiError';
+import { SEARCH_TRIP_TYPE_TO_ENUM, getFarePerPassenger } from '../booking/booking.fare';
 import { prisma } from '../../../shared/prisma';
 import { getDynamicVesselImage } from '../../../shared/mediaCatalog';
+import {
+  formatLocalTime,
+  localDate,
+  localDayBounds,
+  parseScheduleTime,
+} from '../../../shared/portTime';
 import {
   ICreateSchedulePayload,
   IScheduleFilterOptions,
@@ -53,21 +61,24 @@ const withVesselLock = <T>(ferryId: string, fn: (tx: Db) => Promise<T>) =>
     return fn(tx);
   });
 
-const startOfUtcDay = (date: Date) =>
-  new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
+/**
+ * Off days store a calendar date as UTC midnight of `YYYY-MM-DD`. A trip falls on an off day
+ * when its departure port local date is that calendar date (spec 0003, AC-8).
+ */
+const offDayDateFor = (departure: Date, departureTimeZone: string) =>
+  new Date(`${localDate(departure, departureTimeZone)}T00:00:00.000Z`);
 
 const assertNotBlackout = async (
   db: Db,
   operatorId: string,
   ferryId: string,
   departure: Date,
+  departureTimeZone: string,
 ) => {
   const activeOffDay = await db.offDay.findFirst({
     where: {
       operatorId,
-      date: startOfUtcDay(departure),
+      date: offDayDateFor(departure, departureTimeZone),
       OR: [{ ferryId }, { ferryId: null }],
     },
   });
@@ -120,14 +131,6 @@ const verifyVesselAvailability = async (
   }
 };
 
-const formatTimeOfDay = (date: Date): string => {
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-};
-
 const calculateDurationMinutes = (start: Date, end: Date): string => {
   const differenceMinutes = Math.round(
     (end.getTime() - start.getTime()) / (1000 * 60),
@@ -144,18 +147,23 @@ const calculateDurationMinutes = (start: Date, end: Date): string => {
   return `${minutes}m`;
 };
 
+/** Arrival must follow departure, checked on the resolved instants (spec 0003, rule 8). */
+const assertArrivalAfterDeparture = (departure: Date, arrival: Date) => {
+  if (departure.getTime() >= arrival.getTime()) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'arrivalTime must be after departureTime');
+  }
+};
+
 const createSchedule = async (
   userId: string,
   payload: ICreateSchedulePayload,
 ) => {
   const operator = await resolveOperatorProfile(userId);
 
-  const departureTimeDate = new Date(payload.departureTime);
-  const arrivalTimeDate = new Date(payload.arrivalTime);
-
   const [route, ferry] = await Promise.all([
     prisma.route.findUnique({
       where: { id: payload.routeId },
+      include: { departurePort: true, destinationPort: true },
     }),
     prisma.ferry.findUnique({
       where: { id: payload.ferryId },
@@ -190,11 +198,22 @@ const createSchedule = async (
     );
   }
 
+  // A wall time means that time at the port: departure at its port, arrival at its port.
+  const departureTimeDate = parseScheduleTime(payload.departureTime, route.departurePort.timeZone);
+  const arrivalTimeDate = parseScheduleTime(payload.arrivalTime, route.destinationPort.timeZone);
+  assertArrivalAfterDeparture(departureTimeDate, arrivalTimeDate);
+
   assertWithinCapacity(payload.availableSeats, ferry.capacity);
   const assignedCapacity = payload.availableSeats ?? ferry.capacity;
 
   return withVesselLock(ferry.id, async tx => {
-    await assertNotBlackout(tx, operator.id, ferry.id, departureTimeDate);
+    await assertNotBlackout(
+      tx,
+      operator.id,
+      ferry.id,
+      departureTimeDate,
+      route.departurePort.timeZone,
+    );
     await verifyVesselAvailability(
       tx,
       ferry.id,
@@ -257,12 +276,20 @@ const listOperatorSchedules = async (
   }
 
   if (options.date) {
-    const startOfDay = new Date(`${options.date}T00:00:00.000Z`);
-    const endOfDay = new Date(`${options.date}T23:59:59.999Z`);
-    whereClause.departureTime = {
-      gte: startOfDay,
-      lte: endOfDay,
-    };
+    // The date is each trip's departure port local day: one branch per zone, so pagination
+    // stays in the database (spec 0003, AC-7).
+    const ports = await prisma.port.findMany({ select: { id: true, timeZone: true } });
+    const portIdsByZone = new Map<string, string[]>();
+    for (const port of ports) {
+      portIdsByZone.set(port.timeZone, [...(portIdsByZone.get(port.timeZone) ?? []), port.id]);
+    }
+    whereClause.OR = Array.from(portIdsByZone, ([timeZone, portIds]) => {
+      const { start, end } = localDayBounds(options.date!, timeZone);
+      return {
+        route: { departurePortId: { in: portIds } },
+        departureTime: { gte: start, lte: end },
+      };
+    });
   }
 
   const [schedules, totalCount] = await Promise.all([
@@ -331,7 +358,10 @@ const updateSchedule = async (
 
   const existingSchedule = await prisma.schedule.findUnique({
     where: { id: scheduleId },
-    include: { route: true, ferry: true },
+    include: {
+      route: { include: { departurePort: true, destinationPort: true } },
+      ferry: true,
+    },
   });
 
   if (!existingSchedule || existingSchedule.route.operatorId !== operator.id) {
@@ -340,12 +370,17 @@ const updateSchedule = async (
 
   assertWithinCapacity(payload.availableSeats, existingSchedule.ferry.capacity);
 
+  // A time not sent keeps its stored value; a sent wall time is read at its port (spec 0003, rule 8).
+  const { departurePort, destinationPort } = existingSchedule.route;
   const newDeparture = payload.departureTime
-    ? new Date(payload.departureTime)
+    ? parseScheduleTime(payload.departureTime, departurePort.timeZone)
     : existingSchedule.departureTime;
   const newArrival = payload.arrivalTime
-    ? new Date(payload.arrivalTime)
+    ? parseScheduleTime(payload.arrivalTime, destinationPort.timeZone)
     : existingSchedule.arrivalTime;
+  if (payload.departureTime || payload.arrivalTime) {
+    assertArrivalAfterDeparture(newDeparture, newArrival);
+  }
 
   return withVesselLock(existingSchedule.ferryId, async tx => {
     if (payload.departureTime || payload.arrivalTime) {
@@ -354,6 +389,7 @@ const updateSchedule = async (
         operator.id,
         existingSchedule.ferryId,
         newDeparture,
+        departurePort.timeZone,
       );
       await verifyVesselAvailability(
         tx,
@@ -418,12 +454,12 @@ const deleteSchedule = async (userId: string, scheduleId: string) => {
     include: {
       route: {
         include: {
-          departurePort: { select: { name: true } },
-          destinationPort: { select: { name: true } },
+          departurePort: { select: { name: true, timeZone: true } },
+          destinationPort: { select: { name: true, timeZone: true } },
         },
       },
       _count: {
-        select: { bookings: true },
+        select: { bookings: true, returnBookings: true },
       },
     },
   });
@@ -432,7 +468,10 @@ const deleteSchedule = async (userId: string, scheduleId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Schedule slot not found');
   }
 
-  if (existingSchedule._count.bookings > 0) {
+  if (
+    (existingSchedule._count.bookings ?? 0) + (existingSchedule._count.returnBookings ?? 0) >
+    0
+  ) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       'Cannot delete schedule with existing customer bookings',
@@ -490,15 +529,14 @@ const bulkDeleteSchedules = async (userId: string, ids: string[]) => {
     where: {
       id: { in: ids },
       route: { operatorId: operator.id },
-      bookings: {
-        some: {},
-      },
+      // Outbound or return leg bookings both block a delete.
+      OR: [{ bookings: { some: {} } }, { returnBookings: { some: {} } }],
     },
     include: {
       route: {
         include: {
-          departurePort: { select: { name: true } },
-          destinationPort: { select: { name: true } },
+          departurePort: { select: { name: true, timeZone: true } },
+          destinationPort: { select: { name: true, timeZone: true } },
         },
       },
     },
@@ -512,7 +550,7 @@ const bulkDeleteSchedules = async (userId: string, ids: string[]) => {
     const routeNames = schedulesWithBookings
       .map(
         s =>
-          `"${s.route?.departurePort?.name ?? 'Port'} ➔ ${s.route?.destinationPort?.name ?? 'Port'}" (${new Date(s.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+          `"${s.route?.departurePort?.name ?? 'Port'} ➔ ${s.route?.destinationPort?.name ?? 'Port'}" (${formatLocalTime(s.departureTime, s.route.departurePort.timeZone)})`,
       )
       .join(', ');
     throw new ApiError(
@@ -593,14 +631,19 @@ const resolvePortIdentifier = async (portIdentifier: string) => {
 const findTripsForPortPair = async (
   departurePortId: string,
   destinationPortId: string,
+  departureTimeZone: string,
   travelDate: string,
   requiredSeats: number,
   adultsCount: number,
   childrenCount: number,
   limit: number,
+  tripType: TripType,
 ): Promise<ISearchedTripResult[]> => {
-  const startOfDay = new Date(`${travelDate}T00:00:00.000Z`);
-  const endOfDay = new Date(`${travelDate}T23:59:59.999Z`);
+  // The searched date is a local day at the departure port, not a UTC day (spec 0003, AC-2).
+  const { start: startOfDay, end: endOfDay } = localDayBounds(travelDate, departureTimeZone);
+  // Never offer a sailing that has already left, even if its status was not updated.
+  const now = new Date();
+  const earliestDeparture = now > startOfDay ? now : startOfDay;
 
   const schedules = await prisma.schedule.findMany({
     where: {
@@ -610,7 +653,7 @@ const findTripsForPortPair = async (
         status: RouteStatus.ACTIVE,
       },
       departureTime: {
-        gte: startOfDay,
+        gte: earliestDeparture,
         lte: endOfDay,
       },
       ferry: {
@@ -645,6 +688,7 @@ const findTripsForPortPair = async (
   return schedules.map(schedule => {
     const totalPrice =
       adultsCount * schedule.adultFare + childrenCount * schedule.childFare;
+    const tripFare = getFarePerPassenger(tripType, schedule);
 
     return {
       tripId: schedule.id,
@@ -658,8 +702,9 @@ const findTripsForPortPair = async (
       departurePortId: schedule.route.departurePort?.id || departurePortId,
       destinationPort: schedule.route.destinationPort?.name || '',
       destinationPortId: schedule.route.destinationPort?.id || destinationPortId,
-      departureTime: formatTimeOfDay(schedule.departureTime),
-      arrivalTime: formatTimeOfDay(schedule.arrivalTime),
+      // Port local clock strings: departure at its port, arrival at its port (spec 0003, AC-3).
+      departureTime: formatLocalTime(schedule.departureTime, schedule.route.departurePort.timeZone),
+      arrivalTime: formatLocalTime(schedule.arrivalTime, schedule.route.destinationPort.timeZone),
       duration: calculateDurationMinutes(
         schedule.departureTime,
         schedule.arrivalTime,
@@ -668,6 +713,22 @@ const findTripsForPortPair = async (
       pricePerAdult: schedule.adultFare,
       pricePerChild: schedule.childFare,
       totalPrice,
+      departureAt: schedule.departureTime.toISOString(),
+      arrivalAt: schedule.arrivalTime.toISOString(),
+      departureTimeZone: schedule.route.departurePort.timeZone,
+      arrivalTimeZone: schedule.route.destinationPort.timeZone,
+      operatorId: schedule.route.operatorId,
+      fareQuote: {
+        tripType,
+        available: tripFare !== null,
+        pricePerAdult: tripFare?.adultFare ?? null,
+        pricePerChild: tripFare?.childFare ?? null,
+        totalPrice: tripFare
+          ? Math.round(
+              (adultsCount * tripFare.adultFare + childrenCount * tripFare.childFare) * 100,
+            ) / 100
+          : null,
+      },
     };
   });
 };
@@ -696,28 +757,39 @@ const searchTrips = async (
   }
 
   const totalRequiredPassengers = (query.adults ?? 1) + (query.children ?? 0);
+  const tripType = SEARCH_TRIP_TYPE_TO_ENUM[query.tripType ?? 'one-way'];
 
   const outboundTrips = await findTripsForPortPair(
     departurePort.id,
     destinationPort.id,
+    departurePort.timeZone,
     query.departureDate,
     totalRequiredPassengers,
     query.adults,
     query.children ?? 0,
     limit,
+    tripType,
   );
 
   let returnTrips: ISearchedTripResult[] = [];
 
-  if (query.tripType === 'round-trip' && query.returnDate) {
+  // Same day return comes back on the departure date.
+  const returnDate =
+    query.tripType === 'same-day-return' ? query.departureDate : query.returnDate;
+
+  if (query.tripType !== 'one-way' && returnDate) {
+    // Return legs are priced inside the outbound bundle; their fareQuote shows one way prices.
+    // The return leg leaves from the outbound destination, so its day is that port's day.
     returnTrips = await findTripsForPortPair(
       destinationPort.id,
       departurePort.id,
-      query.returnDate,
+      destinationPort.timeZone,
+      returnDate,
       totalRequiredPassengers,
       query.adults,
       query.children ?? 0,
       limit,
+      TripType.ONE_WAY,
     );
   }
 
@@ -774,10 +846,19 @@ const getPublicTripById = async (scheduleId: string) => {
     destinationPortId: schedule.route.destinationPort.id,
     departureTime: schedule.departureTime,
     arrivalTime: schedule.arrivalTime,
+    departureTimeZone: schedule.route.departurePort.timeZone,
+    arrivalTimeZone: schedule.route.destinationPort.timeZone,
     duration: calculateDurationMinutes(schedule.departureTime, schedule.arrivalTime),
     availableSeats: schedule.availableSeats,
     adultFare: schedule.adultFare,
     childFare: schedule.childFare,
+    // Per passenger fare by trip type; null = not offered on this route.
+    fares: {
+      ONE_WAY: getFarePerPassenger(TripType.ONE_WAY, schedule),
+      ROUND_TRIP: getFarePerPassenger(TripType.ROUND_TRIP, schedule),
+      SAME_DAY_RETURN: getFarePerPassenger(TripType.SAME_DAY_RETURN, schedule),
+    },
+    operatorId: schedule.route.operatorId,
     status: schedule.status,
     gate: schedule.gate,
     captain: schedule.captain,

@@ -1,23 +1,12 @@
 import express from 'express';
 import { USER_ROLES } from '../../../enums/user';
 import auth from '../../middlewares/auth';
+import optionalAuth from '../../middlewares/optionalAuth';
 import validateRequest from '../../middlewares/validateRequest';
 import { BookingController } from './booking.controller';
 import { BookingValidation } from './booking.validation';
 
 const router = express.Router();
-
-/** Signed in callers are identified; guests pass through and must prove the lead passenger email. */
-const optionalAuth: express.RequestHandler = (req, res, next) => {
-  if (req.headers.authorization) {
-    return auth(USER_ROLES.USER, USER_ROLES.OPERATOR, USER_ROLES.ADMIN)(
-      req,
-      res,
-      next,
-    );
-  }
-  return next();
-};
 
 // Guests may book; a signed-in caller is identified so the booking is linked to their account.
 router.post(

@@ -77,8 +77,9 @@ describe('POST /api/v1/schedules — create', () => {
 
     const res = await api().post('/api/v1/schedules').set('Authorization', o.auth).send(body);
 
+    // Checked in the service after both times are converted at their ports (spec 0003, rule 8).
     expect(res.status).toBe(400);
-    expect(res.body.errorMessages.map((e: { path: string }) => e.path)).toContain('arrivalTime');
+    expect(res.body.message).toBe('arrivalTime must be after departureTime');
   });
 
   it("404: cannot schedule another operator's ferry or route", async () => {
@@ -197,7 +198,8 @@ describe('Vessel clash — one ferry, one voyage at a time', () => {
 });
 
 describe('Off-days (blackouts) block scheduling', () => {
-  it('400: fleet-wide off-day blocks every ferry that UTC day', async () => {
+  it('400: fleet-wide off-day blocks every ferry on that local day at the departure port', async () => {
+    // Test ports are AST (UTC-4): local day D runs 04:00Z on D to 03:59Z on D+1 (spec 0003, AC-8).
     const o = await operatorSetup();
     const day = at(12, 0);
     await api()
@@ -206,20 +208,24 @@ describe('Off-days (blackouts) block scheduling', () => {
       .send({ date: ymd(day), reason: 'Public holiday', category: 'PUBLIC_HOLIDAY' })
       .expect(201);
 
-    const morning = await api().post('/api/v1/schedules').set('Authorization', o.auth).send(schedulePayload(o, at(12, 0, 30)));
-    const lateNight = await api().post('/api/v1/schedules').set('Authorization', o.auth).send(schedulePayload(o, at(12, 23, 0), 30));
-    const nextDay = await api().post('/api/v1/schedules').set('Authorization', o.auth).send(schedulePayload(o, at(13, 0, 30)));
+    const send = (dep: Date) =>
+      api().post('/api/v1/schedules').set('Authorization', o.auth).send(schedulePayload(o, dep, 30));
+    const earlyLocal = await send(at(12, 4, 30)); // 00:30 AST on D
+    const lateLocal = await send(at(13, 3, 0)); // 23:00 AST on D (03:00Z on D+1)
+    const eveningBefore = await send(at(12, 0, 30)); // 20:30 AST on D-1 (00:30Z on D)
+    const nextDay = await send(at(13, 4, 30)); // 00:30 AST on D+1
 
-    expect(morning.status).toBe(400);
-    expect(morning.body.message).toMatch(/blackout/i);
-    expect(lateNight.status).toBe(400);
+    expect(earlyLocal.status).toBe(400);
+    expect(earlyLocal.body.message).toMatch(/blackout/i);
+    expect(lateLocal.status).toBe(400);
+    expect(eveningBefore.status).toBe(201);
     expect(nextDay.status).toBe(201);
   });
 
   it('ferry-specific off-day blocks only that ferry', async () => {
     const o = await operatorSetup();
     const otherFerry = await prisma.ferry.create({
-      data: { operatorId: o.operator.id, name: `Spare ${uniq()}`, registration: `REG-${uniq()}`, capacity: 50 },
+      data: { operatorId: o.operator.id, name: `Spare ${uniq()}`, capacity: 50 },
     });
     await api()
       .post('/api/v1/off-days')

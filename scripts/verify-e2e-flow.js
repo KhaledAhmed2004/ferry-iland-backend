@@ -1,6 +1,9 @@
 const fetch = globalThis.fetch;
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
+/** Booking created by this run; cleared once the flow cancels it. */
+let createdBooking = null;
+
 async function runVerification() {
   console.log('====================================================');
   console.log('🚀 STARTING FERRY E2E INTEGRATION VERIFICATION');
@@ -10,7 +13,9 @@ async function runVerification() {
 
   // 1. Search Trips
   console.log('▶ TEST 1: Live Trip Search from PostgreSQL DB');
-  const searchUrl = `${baseUrl}/trips/search?from=Malé Ferry Terminal&to=Maafushi Jetty&departureDate=2026-10-21&adults=2`;
+  // Search day is the departure port's local today (Philipsburg, spec 0003), not the UTC day.
+  const targetDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lower_Princes' }).format(new Date());
+  const searchUrl = `${baseUrl}/trips/search?from=Philipsburg, Sint Maarten&to=Fort Bay Harbor, Saba&departureDate=${targetDate}&adults=2`;
   const searchRes = await fetch(searchUrl);
   const searchData = await searchRes.json();
 
@@ -86,12 +91,20 @@ async function runVerification() {
     console.log(`     [Pax ${i + 1}] ${t.passengerName} (ID: ${t.passportOrId}) -> Ticket: ${t.ticketNumber}`);
   });
 
+  // Remember the booking so a failure below still releases its seats (see cleanup at the end)
+  createdBooking = booking;
+
   // Verify payment
   if (!booking.payment) {
     throw new Error('Payment record was not created with booking!');
   }
-  console.log(`  ✓ Payment status: ${booking.payment.status} | Method: ${booking.payment.paymentMethod}`);
-  console.log(`  ✓ Financials: Total: $${booking.payment.amount} | Commission (10%): $${booking.payment.platformCommission} | Operator Payout (90%): $${booking.payment.operatorPayout}\n`);
+  // With PAYMENTS_ENABLED=true a paid booking starts PENDING until Stripe confirms it (spec 0002);
+  // with payments off it is CONFIRMED immediately (spec 0001).
+  const awaitingPayment = booking.status === 'PENDING';
+  const cents = v => (typeof v === 'number' ? `$${(v / 100).toFixed(2)}` : 'n/a');
+  console.log(`  ✓ Booking status: ${booking.status}${awaitingPayment ? ' (awaiting payment — PAYMENTS_ENABLED=true)' : ''}`);
+  console.log(`  ✓ Payment status: ${booking.payment.status}`);
+  console.log(`  ✓ Financials: Total: ${cents(booking.payment.amountCents)} | Commission: ${cents(booking.payment.platformCommissionCents)} | Operator Payout: ${cents(booking.payment.operatorPayoutCents)}\n`);
 
   // 4. Verify Seat Decrement
   console.log('▶ TEST 4: Verify Available Seats Decremented in Database');
@@ -108,6 +121,15 @@ async function runVerification() {
 
   // 5. Digital Boarding Pass Lookup
   console.log('▶ TEST 5: Digital Boarding Pass Query (by Booking Reference & Ticket Number)');
+  if (awaitingPayment) {
+    // Unpaid bookings must not expose a boarding pass (spec 0001, AC-6).
+    const unpaidPassRes = await fetch(`${baseUrl}/tickets/pass/${booking.reference}`);
+    if (unpaidPassRes.status !== 404) {
+      throw new Error(`Unpaid booking exposed a boarding pass (HTTP ${unpaidPassRes.status})`);
+    }
+    console.log('  ✓ No boarding pass before payment (404) — correct for an unpaid booking.');
+    console.log('  ℹ️ Pass/QR checks need a paid booking; run with PAYMENTS_ENABLED=false to cover them.\n');
+  } else {
   const passByRefRes = await fetch(`${baseUrl}/tickets/pass/${booking.reference}`);
   const passByRefData = await passByRefRes.json();
 
@@ -126,10 +148,13 @@ async function runVerification() {
     throw new Error(`Digital pass by ticket number failed: ${JSON.stringify(passByTicketData)}`);
   }
   console.log(`  ✓ Digital Pass found by Ticket Number: ${passByTicketData.data.ticketNumber} (${passByTicketData.data.passengerName})\n`);
+  }
 
   // 6. Manage Booking Lookup
   console.log('▶ TEST 6: Self-Service Portal Lookup (/manage-booking/:ref)');
-  const lookupRes = await fetch(`${baseUrl}/manage-booking/${booking.reference}`);
+  // A guest proves ownership with the lead passenger email (spec 0001, AC-7)
+  const leadEmail = encodeURIComponent(booking.leadPassengerEmail);
+  const lookupRes = await fetch(`${baseUrl}/manage-booking/${booking.reference}?email=${leadEmail}`);
   const lookupData = await lookupRes.json();
 
   if (!lookupData.success || !lookupData.data) {
@@ -142,12 +167,15 @@ async function runVerification() {
   console.log('▶ TEST 7: Booking Cancellation & Invariant Verification');
   const cancelRes = await fetch(`${baseUrl}/bookings/${booking.id}/cancel`, {
     method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: booking.leadPassengerEmail }),
   });
   const cancelData = await cancelRes.json();
 
   if (!cancelData.success) {
     throw new Error(`Cancellation failed: ${JSON.stringify(cancelData)}`);
   }
+  createdBooking = null; // released — nothing left to clean up
   console.log(`  ✓ Booking cancelled: status = ${cancelData.data.status}`);
 
   const checkFinalSeatsRes = await fetch(`${baseUrl}/trips/${trip.tripId}`);
@@ -165,7 +193,25 @@ async function runVerification() {
   console.log('====================================================');
 }
 
-runVerification().catch(err => {
+/** Cancel a booking this run created if a later step failed, so its seats are not left held. */
+async function releaseCreatedBooking() {
+  if (!createdBooking) return;
+  const baseUrl = process.env.E2E_API_URL || `http://localhost:${process.env.PORT || 5000}/api/v1`;
+  try {
+    const res = await fetch(`${baseUrl}/bookings/${createdBooking.id}/cancel`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: createdBooking.leadPassengerEmail }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    console.error(`  ↺ Cleanup: cancelled test booking ${createdBooking.reference}`);
+  } catch {
+    console.error(`  ⚠️ Cleanup failed: cancel test booking ${createdBooking.reference} manually`);
+  }
+}
+
+runVerification().catch(async err => {
   console.error('❌ E2E VERIFICATION FAILED:', err);
+  await releaseCreatedBooking();
   process.exit(1);
 });

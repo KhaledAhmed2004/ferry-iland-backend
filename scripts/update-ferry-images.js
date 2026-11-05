@@ -42,7 +42,7 @@ async function updateFerryImages() {
       data: { imageUrl: newImageUrl },
     });
 
-    console.log(`✓ [${ferry.type.padEnd(17)}] "${ferry.name}" (${ferry.registration})`);
+    console.log(`✓ [${ferry.type.padEnd(17)}] "${ferry.name}"`);
     console.log(`  -> ${newImageUrl}`);
   }
 

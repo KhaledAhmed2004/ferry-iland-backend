@@ -3,6 +3,9 @@ import { StatusCodes } from 'http-status-codes';
 import { AccountStatus, TripStatus } from '@prisma/client';
 import { ProviderService } from '../provider.service';
 import { prisma } from '../../../../shared/prisma';
+import { deleteFile } from '../../../middlewares/fileHandler';
+
+vi.mock('../../../middlewares/fileHandler', () => ({ deleteFile: vi.fn() }));
 
 vi.mock('../../../../shared/prisma', () => ({
   prisma: {
@@ -289,6 +292,100 @@ describe('ProviderService Unit Tests', () => {
           }),
         }),
       );
+    });
+
+    describe('company logo', () => {
+      const NEW_LOGO = 'http://localhost:5000/uploads/images/new-logo.png';
+      const OLD_LOGO = 'http://localhost:5000/uploads/images/old-logo.png';
+
+      beforeEach(() => {
+        vi.mocked(deleteFile).mockReset();
+        vi.mocked(prisma.operatorProfile.update).mockReset();
+        vi.mocked(prisma.operatorProfile.update).mockImplementation(
+          async (args: any) => ({ ...mockProvider, logoUrl: args.data.logoUrl }) as any,
+        );
+      });
+
+      it('saves an uploaded logo and deletes the one it replaces', async () => {
+        vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue({
+          ...mockProvider,
+          logoUrl: OLD_LOGO,
+        } as any);
+
+        const result = await ProviderService.updateOperatorSettings('user-uuid-1', {
+          logo: NEW_LOGO,
+        });
+
+        expect(result.logoUrl).toBe(NEW_LOGO);
+        expect(prisma.operatorProfile.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ logoUrl: NEW_LOGO }) }),
+        );
+        expect(deleteFile).toHaveBeenCalledWith(OLD_LOGO, { provider: 'local' });
+      });
+
+      it('clears the logo on removeLogo and deletes the stored file', async () => {
+        vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue({
+          ...mockProvider,
+          logoUrl: OLD_LOGO,
+        } as any);
+
+        const result = await ProviderService.updateOperatorSettings('user-uuid-1', {
+          removeLogo: true,
+        });
+
+        expect(result.logoUrl).toBeNull();
+        expect(deleteFile).toHaveBeenCalledWith(OLD_LOGO, { provider: 'local' });
+      });
+
+      it('leaves the logo untouched when the update has no logo fields', async () => {
+        vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue({
+          ...mockProvider,
+          logoUrl: OLD_LOGO,
+        } as any);
+
+        await ProviderService.updateOperatorSettings('user-uuid-1', { companyName: 'New Name' });
+
+        expect(prisma.operatorProfile.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ logoUrl: undefined }) }),
+        );
+        expect(deleteFile).not.toHaveBeenCalled();
+      });
+
+      it('rejects a non-image upload with 400 and removes the stored file', async () => {
+        vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockProvider as any);
+        const pdf = 'http://localhost:5000/uploads/documents/brochure.pdf';
+
+        await expect(
+          ProviderService.updateOperatorSettings('user-uuid-1', { logo: pdf }),
+        ).rejects.toMatchObject({ statusCode: StatusCodes.BAD_REQUEST });
+        expect(prisma.operatorProfile.update).not.toHaveBeenCalled();
+        expect(deleteFile).toHaveBeenCalledWith(pdf, { provider: 'local' });
+      });
+
+      it('still saves when deleting the old file fails', async () => {
+        vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue({
+          ...mockProvider,
+          logoUrl: OLD_LOGO,
+        } as any);
+        vi.mocked(deleteFile).mockRejectedValue(new Error('ENOENT'));
+
+        const result = await ProviderService.updateOperatorSettings('user-uuid-1', {
+          logo: NEW_LOGO,
+        });
+
+        expect(result.logoUrl).toBe(NEW_LOGO);
+      });
+    });
+
+    it('lists providers with their logoUrl', async () => {
+      vi.mocked(prisma.operatorProfile.count).mockResolvedValue(1);
+      vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([
+        { ...mockProvider, logoUrl: 'http://localhost:5000/uploads/images/a.png' },
+      ] as any);
+
+      const result = await ProviderService.listProviders({});
+
+      expect(result.data[0].logoUrl).toBe('http://localhost:5000/uploads/images/a.png');
     });
   });
 });

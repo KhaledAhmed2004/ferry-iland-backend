@@ -4,5 +4,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     exclude: [...configDefaults.exclude, '**/*.int.spec.ts'],
+    // Run in a zone far from the Caribbean ports so server zone leaks fail tests (spec 0003).
+    env: { TZ: 'Asia/Dhaka' },
   },
 });

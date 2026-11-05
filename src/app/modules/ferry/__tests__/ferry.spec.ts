@@ -35,7 +35,6 @@ describe('FerryService Unit Tests', () => {
     it('creates a vessel under operator profile when payload is valid', async () => {
       const payload = {
         name: 'Ocean Voyager I',
-        registration: 'HI-9921-C',
         capacity: 180,
         type: VesselType.CATAMARAN,
         status: VesselStatus.IN_SERVICE,
@@ -59,7 +58,6 @@ describe('FerryService Unit Tests', () => {
         id: 'ferry-1',
         operatorId: 'op-1',
         name: 'Ocean Voyager I',
-        registration: 'HI-9921-C',
       });
       expect(prisma.ferry.create).toHaveBeenCalledWith({
         data: {
@@ -76,33 +74,11 @@ describe('FerryService Unit Tests', () => {
       await expect(
         FerryService.createFerry('user-no-op', {
           name: 'Boat',
-          registration: 'REG-1',
           capacity: 50,
         }),
       ).rejects.toMatchObject({
         statusCode: StatusCodes.FORBIDDEN,
         message: 'Operator profile not found for this user',
-      });
-    });
-
-    it('throws 409 when vessel registration code already exists', async () => {
-      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(
-        mockOperator as any,
-      );
-      vi.mocked(prisma.ferry.findUnique).mockResolvedValue({
-        id: 'existing-ferry',
-        registration: 'HI-9921-C',
-      } as any);
-
-      await expect(
-        FerryService.createFerry('user-op-1', {
-          name: 'Boat',
-          registration: 'HI-9921-C',
-          capacity: 50,
-        }),
-      ).rejects.toMatchObject({
-        statusCode: StatusCodes.CONFLICT,
-        message: "Vessel registration 'HI-9921-C' is already registered",
       });
     });
   });
@@ -273,7 +249,6 @@ describe('FerryService Unit Tests', () => {
         id: 'ferry-1',
         operatorId: 'op-1',
         name: 'Old Name',
-        registration: 'REG-1',
       };
       const updatedFerry = {
         ...existingFerry,
@@ -293,34 +268,6 @@ describe('FerryService Unit Tests', () => {
       });
 
       expect(result).toEqual(updatedFerry);
-    });
-
-    it('throws 409 if updated registration code collides with another vessel', async () => {
-      const existingFerry = {
-        id: 'ferry-1',
-        operatorId: 'op-1',
-        registration: 'REG-1',
-      };
-      const collidingFerry = {
-        id: 'ferry-2',
-        registration: 'REG-TAKEN',
-      };
-
-      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(
-        mockOperator as any,
-      );
-      vi.mocked(prisma.ferry.findUnique)
-        .mockResolvedValueOnce(existingFerry as any)
-        .mockResolvedValueOnce(collidingFerry as any);
-
-      await expect(
-        FerryService.updateFerry('user-op-1', 'ferry-1', {
-          registration: 'REG-TAKEN',
-        }),
-      ).rejects.toMatchObject({
-        statusCode: StatusCodes.CONFLICT,
-        message: "Vessel registration 'REG-TAKEN' is already registered",
-      });
     });
   });
 

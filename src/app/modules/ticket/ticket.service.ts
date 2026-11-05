@@ -61,7 +61,8 @@ const getTripManifest = async (
 
   const whereClause: Record<string, any> = {
     booking: {
-      scheduleId: tripId,
+      // Passengers on this sailing: outbound bookings and return leg bookings.
+      OR: [{ scheduleId: tripId }, { returnScheduleId: tripId }],
       status: { in: SOLD_BOOKING_STATUSES },
     },
   };
@@ -116,6 +117,9 @@ const getTripManifest = async (
       destinationPort: schedule.route.destinationPort.name,
       departureTime: schedule.departureTime,
       arrivalTime: schedule.arrivalTime,
+      // Port zones so the manifest shows dock local times (spec 0003, AC-7).
+      departureTimeZone: schedule.route.departurePort.timeZone,
+      arrivalTimeZone: schedule.route.destinationPort.timeZone,
       tripStatus: schedule.status,
       totalPassengers,
       boardedPassengers,
@@ -242,6 +246,12 @@ const getDigitalPass = async (identifier: string) => {
               ferry: true,
             },
           },
+          returnSchedule: {
+            include: {
+              route: { include: { departurePort: true, destinationPort: true } },
+              ferry: true,
+            },
+          },
         },
       },
     },
@@ -250,6 +260,8 @@ const getDigitalPass = async (identifier: string) => {
   if (!ticket) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Digital pass ticket not found');
   }
+
+  const returnSchedule = ticket.booking.returnSchedule;
 
   return {
     ticketNumber: ticket.ticketNumber,
@@ -269,8 +281,36 @@ const getDigitalPass = async (identifier: string) => {
       destinationPort: ticket.booking.schedule.route.destinationPort.name,
       departureTime: ticket.booking.schedule.departureTime,
       arrivalTime: ticket.booking.schedule.arrivalTime,
+      // Port zones so the pass shows dock local times (spec 0003).
+      departureTimeZone: ticket.booking.schedule.route.departurePort.timeZone,
+      arrivalTimeZone: ticket.booking.schedule.route.destinationPort.timeZone,
       gate: ticket.booking.schedule.gate,
     },
+    // Round trip / same day return: the same ticket is used on the return ferry.
+    tripType: ticket.booking.tripType,
+    returnSchedule: returnSchedule
+      ? {
+          id: returnSchedule.id,
+          departureTime: returnSchedule.departureTime,
+          arrivalTime: returnSchedule.arrivalTime,
+          gate: returnSchedule.gate,
+          status: returnSchedule.status,
+          route: {
+            id: returnSchedule.route.id,
+            departurePort: {
+              id: returnSchedule.route.departurePort.id,
+              name: returnSchedule.route.departurePort.name,
+              timeZone: returnSchedule.route.departurePort.timeZone,
+            },
+            destinationPort: {
+              id: returnSchedule.route.destinationPort.id,
+              name: returnSchedule.route.destinationPort.name,
+              timeZone: returnSchedule.route.destinationPort.timeZone,
+            },
+          },
+          ferry: { id: returnSchedule.ferry.id, name: returnSchedule.ferry.name },
+        }
+      : null,
     qrCodePayload: `PASS:${ticket.ticketNumber}:${ticket.booking.reference}`,
   };
 };

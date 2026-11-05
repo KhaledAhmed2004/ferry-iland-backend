@@ -3,6 +3,7 @@ import { StatusCodes } from 'http-status-codes';
 import { RouteStatus, TripStatus, VesselStatus } from '@prisma/client';
 import { ScheduleService } from '../schedule.service';
 import { prisma } from '../../../../shared/prisma';
+import { localDayBounds, portToday } from '../../../../shared/portTime';
 
 vi.mock('../../../../shared/prisma', () => {
   const prisma: any = {
@@ -20,6 +21,7 @@ vi.mock('../../../../shared/prisma', () => {
     },
     port: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     offDay: {
       findFirst: vi.fn(),
@@ -52,6 +54,8 @@ describe('ScheduleService Unit Tests', () => {
     departurePortId: 'port-male',
     destinationPortId: 'port-maafushi',
     status: RouteStatus.ACTIVE,
+    departurePort: { id: 'port-male', name: 'Philipsburg', timeZone: 'America/Lower_Princes' },
+    destinationPort: { id: 'port-maafushi', name: 'Fort Bay', timeZone: 'America/Kralendijk' },
   };
 
   const mockFerry = {
@@ -275,12 +279,20 @@ describe('ScheduleService Unit Tests', () => {
       id: 'port-male',
       name: 'Malé Terminal',
       code: 'MLE',
+      timeZone: 'America/Lower_Princes',
     };
     const mockMaafushiPort = {
       id: 'port-maafushi',
       name: 'Maafushi Island',
       code: 'MAA',
+      // A different offset from the departure port proves each leg uses its own zone.
+      timeZone: 'Europe/London',
     };
+    const routeWithPorts = (from: any, to: any) => ({
+      operator: { companyName: 'Island Express' },
+      departurePort: from,
+      destinationPort: to,
+    });
 
     it('returns empty results when ports cannot be resolved', async () => {
       vi.mocked(prisma.port.findFirst).mockResolvedValue(null);
@@ -309,9 +321,7 @@ describe('ScheduleService Unit Tests', () => {
         availableSeats: 24,
         adultFare: 25,
         childFare: 15,
-        route: {
-          operator: { companyName: 'Island Express' },
-        },
+        route: routeWithPorts(mockMalePort, mockMaafushiPort),
         ferry: { name: 'Ocean Speed 1' },
       };
 
@@ -338,7 +348,44 @@ describe('ScheduleService Unit Tests', () => {
         pricePerAdult: 25,
         pricePerChild: 15,
         totalPrice: 65,
+        // 08:30Z is 04:30 AST at the departure port, 09:15Z is 10:15 BST at the destination.
+        departureTime: '04:30 AM',
+        arrivalTime: '10:15 AM',
+        departureTimeZone: 'America/Lower_Princes',
+        arrivalTimeZone: 'Europe/London',
+        departureAt: '2026-10-20T08:30:00.000Z',
       });
+    });
+
+    it("searching today only asks for trips that have not departed yet", async () => {
+      vi.mocked(prisma.port.findFirst)
+        .mockResolvedValueOnce(mockMalePort as any)
+        .mockResolvedValueOnce(mockMaafushiPort as any);
+      vi.mocked(prisma.schedule.findMany).mockResolvedValue([]);
+
+      const before = Date.now();
+      const today = portToday('America/Lower_Princes');
+      await ScheduleService.searchTrips({ tripType: 'one-way', from: 'MLE', to: 'MAA', departureDate: today, adults: 1 });
+
+      const where = vi.mocked(prisma.schedule.findMany).mock.calls.at(-1)![0]!.where as any;
+      // Lower bound is "now", not midnight, so sailings that already left today are excluded.
+      expect(where.departureTime.gte.getTime()).toBeGreaterThanOrEqual(before);
+      // Upper bound is the end of the port local day, not the UTC day (spec 0003, AC-2).
+      expect(where.departureTime.lte).toEqual(localDayBounds(today, 'America/Lower_Princes').end);
+    });
+
+    it('searching a future date starts from midnight of that day', async () => {
+      vi.mocked(prisma.port.findFirst)
+        .mockResolvedValueOnce(mockMalePort as any)
+        .mockResolvedValueOnce(mockMaafushiPort as any);
+      vi.mocked(prisma.schedule.findMany).mockResolvedValue([]);
+
+      await ScheduleService.searchTrips({ tripType: 'one-way', from: 'MLE', to: 'MAA', departureDate: '2099-01-01', adults: 1 });
+
+      const where = vi.mocked(prisma.schedule.findMany).mock.calls.at(-1)![0]!.where as any;
+      // Midnight at the departure port (AST, UTC-4), so a 21:00 AST sailing stays on its day.
+      expect(where.departureTime.gte.toISOString()).toBe('2099-01-01T04:00:00.000Z');
+      expect(where.departureTime.lte.toISOString()).toBe('2099-01-02T03:59:59.999Z');
     });
 
     it('finds round-trip journeys with returnTrips populated', async () => {
@@ -353,7 +400,7 @@ describe('ScheduleService Unit Tests', () => {
         availableSeats: 20,
         adultFare: 20,
         childFare: 10,
-        route: { operator: { companyName: 'Island Express' } },
+        route: routeWithPorts(mockMalePort, mockMaafushiPort),
         ferry: { name: 'Boat 1' },
       };
 
@@ -364,7 +411,7 @@ describe('ScheduleService Unit Tests', () => {
         availableSeats: 15,
         adultFare: 20,
         childFare: 10,
-        route: { operator: { companyName: 'Island Express' } },
+        route: routeWithPorts(mockMaafushiPort, mockMalePort),
         ferry: { name: 'Boat 2' },
       };
 
@@ -386,6 +433,160 @@ describe('ScheduleService Unit Tests', () => {
       expect(result.returnTrips).toHaveLength(1);
       expect(result.outboundTrips[0].tripId).toBe('TRIP-OUT');
       expect(result.returnTrips[0].tripId).toBe('TRIP-IN');
+
+      // The return leg's day is the return departure port's day (spec 0003, rule 1).
+      const returnWhere = vi.mocked(prisma.schedule.findMany).mock.calls.at(-1)![0]!.where as any;
+      expect(returnWhere.departureTime.lte).toEqual(
+        localDayBounds('2026-10-25', 'Europe/London').end,
+      );
+    });
+  });
+
+  describe('port local schedule times (spec 0003)', () => {
+    const primeCreate = () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.route.findUnique).mockResolvedValue(mockRoute as any);
+      vi.mocked(prisma.ferry.findUnique).mockResolvedValue(mockFerry as any);
+      vi.mocked(prisma.schedule.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.offDay.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.schedule.create).mockImplementation((async (args: any) => args.data) as any);
+    };
+    const base = { routeId: 'route-1', ferryId: 'ferry-1', adultFare: 25 };
+
+    it('reads a wall time in the departure and destination port zones (AC-6)', async () => {
+      primeCreate();
+      await ScheduleService.createSchedule('user-op-1', {
+        ...base,
+        departureTime: '2026-11-06T08:30',
+        arrivalTime: '2026-11-06T10:00',
+      });
+      const data = vi.mocked(prisma.schedule.create).mock.calls[0][0].data as any;
+      expect(data.departureTime.toISOString()).toBe('2026-11-06T12:30:00.000Z');
+      expect(data.arrivalTime.toISOString()).toBe('2026-11-06T14:00:00.000Z');
+    });
+
+    it('keeps an instant with Z as that exact moment (AC-6)', async () => {
+      primeCreate();
+      await ScheduleService.createSchedule('user-op-1', {
+        ...base,
+        departureTime: '2026-11-06T08:30:00Z',
+        arrivalTime: '2026-11-06T10:00:00Z',
+      });
+      const data = vi.mocked(prisma.schedule.create).mock.calls[0][0].data as any;
+      expect(data.departureTime.toISOString()).toBe('2026-11-06T08:30:00.000Z');
+    });
+
+    it('checks arrival after departure on the converted instants', async () => {
+      primeCreate();
+      await expect(
+        ScheduleService.createSchedule('user-op-1', {
+          ...base,
+          departureTime: '2026-11-06T10:00',
+          arrivalTime: '2026-11-06T09:00',
+        }),
+      ).rejects.toMatchObject({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: 'arrivalTime must be after departureTime',
+      });
+      expect(prisma.schedule.create).not.toHaveBeenCalled();
+    });
+
+    it('checks the off day on the departure port local date (AC-8)', async () => {
+      primeCreate();
+      // 21:00 AST on 6 Nov is 01:00Z on 7 Nov; the off day lookup must use 6 Nov.
+      await ScheduleService.createSchedule('user-op-1', {
+        ...base,
+        departureTime: '2026-11-06T21:00',
+        arrivalTime: '2026-11-06T22:30',
+      });
+      const where = vi.mocked(prisma.offDay.findFirst).mock.calls[0][0]!.where as any;
+      expect(where.date.toISOString()).toBe('2026-11-06T00:00:00.000Z');
+    });
+
+    it('a 23:00 AST sailing on 5 Nov (03:00Z on 6 Nov) is checked against the 5 Nov off day, not 6 Nov (covers: AC-8)', async () => {
+      primeCreate();
+      await ScheduleService.createSchedule('user-op-1', {
+        ...base,
+        departureTime: '2026-11-05T23:00',
+        arrivalTime: '2026-11-06T00:30',
+      });
+      const where = vi.mocked(prisma.offDay.findFirst).mock.calls[0][0]!.where as any;
+      expect(where.date.toISOString()).toBe('2026-11-05T00:00:00.000Z');
+    });
+
+    it('an off day on the local date blocks the schedule with 400 (covers: AC-8)', async () => {
+      primeCreate();
+      vi.mocked(prisma.offDay.findFirst).mockResolvedValue({ reason: 'Hull inspection' } as any);
+
+      await expect(
+        ScheduleService.createSchedule('user-op-1', {
+          ...base,
+          departureTime: '2026-11-06T21:00',
+          arrivalTime: '2026-11-06T22:30',
+        }),
+      ).rejects.toMatchObject({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: 'Cannot schedule trips on a blackout date: Hull inspection',
+      });
+      expect(prisma.schedule.create).not.toHaveBeenCalled();
+    });
+
+    it('PATCH with only arrivalTime keeps the stored departure (rule 8)', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.schedule.findUnique).mockResolvedValue({
+        id: 'sch-1',
+        ferryId: 'ferry-1',
+        departureTime: new Date('2026-11-06T12:30:00.000Z'),
+        arrivalTime: new Date('2026-11-06T14:00:00.000Z'),
+        route: mockRoute,
+        ferry: mockFerry,
+      } as any);
+      vi.mocked(prisma.schedule.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.offDay.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.schedule.update).mockImplementation((async (args: any) => args.data) as any);
+
+      await ScheduleService.updateSchedule('user-op-1', 'sch-1', { arrivalTime: '2026-11-06T11:00' });
+      const data = vi.mocked(prisma.schedule.update).mock.calls[0][0].data as any;
+      expect(data.departureTime.toISOString()).toBe('2026-11-06T12:30:00.000Z');
+      expect(data.arrivalTime.toISOString()).toBe('2026-11-06T15:00:00.000Z');
+
+      await expect(
+        ScheduleService.updateSchedule('user-op-1', 'sch-1', { arrivalTime: '2026-11-06T08:00' }),
+      ).rejects.toMatchObject({ message: 'arrivalTime must be after departureTime' });
+    });
+
+    it('list date filter uses each departure port local day, one branch per zone (AC-7)', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.port.findMany).mockResolvedValue([
+        { id: 'p-1', timeZone: 'America/Anguilla' },
+        { id: 'p-2', timeZone: 'America/Anguilla' },
+        { id: 'p-3', timeZone: 'Europe/London' },
+      ] as any);
+      vi.mocked(prisma.schedule.findMany).mockResolvedValue([]);
+      vi.mocked(prisma.schedule.count).mockResolvedValue(0);
+
+      await ScheduleService.listOperatorSchedules('user-op-1', { date: '2026-11-06' } as any);
+
+      const where = vi.mocked(prisma.schedule.findMany).mock.calls[0][0]!.where as any;
+      expect(where.route).toEqual({ operatorId: 'op-1' });
+      expect(where.OR).toEqual([
+        {
+          route: { departurePortId: { in: ['p-1', 'p-2'] } },
+          departureTime: {
+            gte: new Date('2026-11-06T04:00:00.000Z'),
+            lte: new Date('2026-11-07T03:59:59.999Z'),
+          },
+        },
+        {
+          route: { departurePortId: { in: ['p-3'] } },
+          departureTime: {
+            gte: new Date('2026-11-06T00:00:00.000Z'),
+            lte: new Date('2026-11-06T23:59:59.999Z'),
+          },
+        },
+      ]);
+      // The count uses the same filter, so pagination totals match the page.
+      expect(vi.mocked(prisma.schedule.count).mock.calls[0][0]!.where).toBe(where);
     });
   });
 
@@ -433,7 +634,7 @@ describe('ScheduleService Unit Tests', () => {
           id: 's-1',
           departureTime: new Date('2026-10-25T10:00:00Z'),
           route: {
-            departurePort: { name: 'Port A' },
+            departurePort: { name: 'Port A', timeZone: 'America/Anguilla' },
             destinationPort: { name: 'Port B' },
           },
         },
@@ -456,7 +657,7 @@ describe('ScheduleService Unit Tests', () => {
           id: 's-1',
           departureTime: new Date('2026-10-25T10:00:00Z'),
           route: {
-            departurePort: { name: 'Port A' },
+            departurePort: { name: 'Port A', timeZone: 'America/Anguilla' },
             destinationPort: { name: 'Port B' },
           },
         },

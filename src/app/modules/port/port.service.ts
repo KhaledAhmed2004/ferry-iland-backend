@@ -1,6 +1,8 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
+import { TripStatus } from '@prisma/client';
+import { assertValidTimeZone } from '../../../shared/portTime';
 import {
   ICreatePortPayload,
   IPortFilterOptions,
@@ -11,6 +13,7 @@ const createPort = async (payload: ICreatePortPayload) => {
   return prisma.port.create({
     data: {
       name: payload.name,
+      timeZone: assertValidTimeZone(payload.timeZone),
       isActive: payload.isActive ?? true,
     },
   });
@@ -73,9 +76,37 @@ const updatePort = async (portId: string, payload: IUpdatePortPayload) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Port not found');
   }
 
-  return prisma.port.update({
-    where: { id: portId },
-    data: payload,
+  const changesTimeZone =
+    payload.timeZone !== undefined && payload.timeZone !== existingPort.timeZone;
+  if (!changesTimeZone) {
+    return prisma.port.update({ where: { id: portId }, data: payload });
+  }
+
+  const timeZone = assertValidTimeZone(payload.timeZone);
+
+  // A zone change would silently move every booked sailing, so it is blocked while any
+  // future, non cancelled trip leaves from or arrives at this port (spec 0003, AC-11).
+  return prisma.$transaction(async tx => {
+    const upcomingTrips = await tx.schedule.count({
+      where: {
+        departureTime: { gt: new Date() },
+        status: { not: TripStatus.CANCELLED },
+        route: {
+          OR: [{ departurePortId: portId }, { destinationPortId: portId }],
+        },
+      },
+    });
+
+    if (upcomingTrips > 0) {
+      throw new ApiError(
+        StatusCodes.CONFLICT,
+        `Cannot change time zone: ${upcomingTrips} upcoming trip${upcomingTrips === 1 ? '' : 's'} depart from or arrive at this port`,
+        '',
+        { field: 'timeZone', upcomingTrips },
+      );
+    }
+
+    return tx.port.update({ where: { id: portId }, data: { ...payload, timeZone } });
   });
 };
 

@@ -236,13 +236,12 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         availableSeats: 30,
         route: {
           id: 'route-1',
-          departurePort: { name: 'Malé', code: 'MLE' },
-          destinationPort: { name: 'Hulhumalé', code: 'HUL' },
+          departurePort: { name: 'Malé', code: 'MLE', timeZone: 'America/Anguilla' },
+          destinationPort: { name: 'Hulhumalé', code: 'HUL', timeZone: 'America/Anguilla' },
         },
         ferry: {
           id: 'ferry-1',
           name: 'Ocean Express I',
-          registration: 'HI-001',
           capacity: 50,
         },
         bookings: [
@@ -254,6 +253,8 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
 
       vi.mocked(prisma.schedule.findMany)
         .mockResolvedValueOnce([mockTodaySchedule] as any)
+        .mockResolvedValueOnce([mockTodaySchedule] as any)
+        // Today's departures at each port's own today (spec 0003, rule 16).
         .mockResolvedValueOnce([mockTodaySchedule] as any);
 
       vi.mocked(prisma.booking.findMany)
@@ -450,7 +451,6 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         ferry: {
           id: 'ferry-1',
           name: 'Sea Breeze Catamaran',
-          registration: 'MV-991',
           capacity: 60,
         },
       };
@@ -727,7 +727,6 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         {
           id: 'ferry-001',
           name: 'Island Cruiser',
-          registration: 'MV-001',
           capacity: 100,
           type: VesselType.CATAMARAN,
           status: VesselStatus.IN_SERVICE,

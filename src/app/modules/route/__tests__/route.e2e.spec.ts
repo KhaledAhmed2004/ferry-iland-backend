@@ -979,9 +979,8 @@ describe('Route Module E2E Test Suite (Core Business Flow - Happy & Negative Pat
       expect(firstJourney.from).toBe('Malé Ferry Terminal');
       expect(firstJourney.to).toBe('Maafushi Harbor');
       expect(firstJourney.tag).toBe('Most Popular');
-      expect(firstJourney.tagColor).toBe('bg-blue-600 text-white');
-      expect(firstJourney.startingPrice).toBe(30);
-      expect(firstJourney.category).toBe('speedboat');
+      expect(firstJourney.startingPrice).toBe(30); // cheapest real upcoming adult fare (30 vs 35)
+      expect(firstJourney.upcomingTripsCount).toBe(2);
       expect(firstJourney.totalBookings).toBe(40);
       expect(firstJourney.operatorName).toBe('Maldives Speed Ferries');
 
@@ -989,19 +988,83 @@ describe('Route Module E2E Test Suite (Core Business Flow - Happy & Negative Pat
       expect(secondJourney.from).toBe('Malé Ferry Terminal');
       expect(secondJourney.to).toBe('Thulusdhoo Harbor');
       expect(secondJourney.tag).toBeNull();
-      expect(secondJourney.tagColor).toBeNull();
     });
 
-    it('200 OK: Respects limit parameter and filters by category', async () => {
+    it('200 OK: Never returns fabricated profile data (category, rating, reviews, fake highlights)', async () => {
       vi.mocked(prisma.route.findMany).mockResolvedValue(mockPopularRoutes as any);
 
-      const res = await request(app)
-        .get('/api/v1/routes/popular')
-        .query({ limit: 1, category: 'speedboat' });
+      const res = await request(app).get('/api/v1/routes/popular');
+
+      expect(res.status).toBe(StatusCodes.OK);
+      for (const journey of res.body.data) {
+        expect(journey).not.toHaveProperty('category');
+        expect(journey).not.toHaveProperty('rating');
+        expect(journey).not.toHaveProperty('reviews');
+        expect(journey).not.toHaveProperty('dailyTripsCount');
+        expect(journey.highlights).toEqual([]); // mocks have no amenities
+      }
+    });
+
+    it('200 OK: Route with no upcoming trips and no base price reports null price and 0 trips', async () => {
+      vi.mocked(prisma.route.findMany).mockResolvedValue([
+        { ...mockPopularRoutes[1], basePrice: null, schedules: [] },
+      ] as any);
+
+      const res = await request(app).get('/api/v1/routes/popular');
+
+      expect(res.status).toBe(StatusCodes.OK);
+      expect(res.body.data[0].startingPrice).toBeNull();
+      expect(res.body.data[0].upcomingTripsCount).toBe(0);
+      expect(res.body.data[0].tag).toBeNull(); // no bookings -> not labelled "Most Popular"
+    });
+
+    it('200 OK: nextDepartureTime is the earliest upcoming trip that still has seats', async () => {
+      const soon = new Date('2030-01-01T08:00:00.000Z');
+      const later = new Date('2030-01-01T12:00:00.000Z');
+      const soldOutEarliest = new Date('2030-01-01T06:00:00.000Z');
+      vi.mocked(prisma.route.findMany).mockResolvedValue([
+        {
+          ...mockPopularRoutes[0],
+          schedules: [
+            { id: 's-late', adultFare: 30, childFare: 15, availableSeats: 10, departureTime: later, _count: { bookings: 0 } },
+            { id: 's-full', adultFare: 30, childFare: 15, availableSeats: 0, departureTime: soldOutEarliest, _count: { bookings: 5 } },
+            { id: 's-soon', adultFare: 30, childFare: 15, availableSeats: 3, departureTime: soon, _count: { bookings: 1 } },
+          ],
+        },
+      ] as any);
+
+      const res = await request(app).get('/api/v1/routes/popular');
+
+      expect(res.body.data[0].nextDepartureTime).toBe(soon.toISOString());
+    });
+
+    it('200 OK: nextDepartureTime is null when no upcoming trip has seats', async () => {
+      vi.mocked(prisma.route.findMany).mockResolvedValue([
+        { ...mockPopularRoutes[1], schedules: [] },
+      ] as any);
+
+      const res = await request(app).get('/api/v1/routes/popular');
+
+      expect(res.body.data[0].nextDepartureTime).toBeNull();
+    });
+
+    it('200 OK: Uses route amenities as highlights when present', async () => {
+      vi.mocked(prisma.route.findMany).mockResolvedValue([
+        { ...mockPopularRoutes[0], amenities: ['Wi-Fi', 'Snack Bar'] },
+      ] as any);
+
+      const res = await request(app).get('/api/v1/routes/popular');
+
+      expect(res.body.data[0].highlights).toEqual(['Wi-Fi', 'Snack Bar']);
+    });
+
+    it('200 OK: Respects limit parameter', async () => {
+      vi.mocked(prisma.route.findMany).mockResolvedValue(mockPopularRoutes as any);
+
+      const res = await request(app).get('/api/v1/routes/popular').query({ limit: 1 });
 
       expect(res.status).toBe(StatusCodes.OK);
       expect(res.body.data).toHaveLength(1);
-      expect(res.body.data[0].category).toBe('speedboat');
     });
   });
 });

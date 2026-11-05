@@ -22,6 +22,27 @@ const getOperatorProfile = async (userId: string) => {
   return operator;
 };
 
+type IBundleFares = {
+  adultRoundTripFare?: number | null;
+  childRoundTripFare?: number | null;
+  adultSameDayFare?: number | null;
+  childSameDayFare?: number | null;
+};
+
+/** Only the bundle fares the request sent; null clears one (option not offered). */
+const pickBundleFares = (dto: IBundleFares): IBundleFares => {
+  const fares: IBundleFares = {};
+  for (const key of [
+    'adultRoundTripFare',
+    'childRoundTripFare',
+    'adultSameDayFare',
+    'childSameDayFare',
+  ] as const) {
+    if (dto[key] !== undefined) fares[key] = dto[key];
+  }
+  return fares;
+};
+
 const createRoute = async (userId: string, dto: ICreateRouteReq) => {
   if (dto.departurePortId === dto.destinationPortId) {
     throw new ApiError(
@@ -75,6 +96,7 @@ const createRoute = async (userId: string, dto: ICreateRouteReq) => {
       destinationPortId: dto.destinationPortId,
       durationMinutes: dto.durationMinutes,
       ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
+      ...pickBundleFares(dto),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.amenities !== undefined && { amenities: dto.amenities }),
         ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
@@ -86,12 +108,14 @@ const createRoute = async (userId: string, dto: ICreateRouteReq) => {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
       destinationPort: {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
     },
@@ -122,12 +146,14 @@ const listOperatorRoutes = async (userId: string, query: IListRoutesQuery) => {
           select: {
             id: true,
             name: true,
+            timeZone: true,
           },
         },
         destinationPort: {
           select: {
             id: true,
             name: true,
+            timeZone: true,
           },
         },
       },
@@ -160,12 +186,14 @@ const getRouteById = async (userId: string, id: string) => {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
       destinationPort: {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
     },
@@ -200,6 +228,7 @@ const updateRoute = async (
     where: { id },
     data: {
       ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
+      ...pickBundleFares(dto),
       ...(dto.description !== undefined && { description: dto.description }),
       ...(dto.amenities !== undefined && { amenities: dto.amenities }),
       ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
@@ -218,12 +247,14 @@ const updateRoute = async (
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
       destinationPort: {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
     },
@@ -239,8 +270,8 @@ const deleteRoute = async (userId: string, id: string) => {
       operatorId: operator.id,
     },
     include: {
-      departurePort: { select: { name: true } },
-      destinationPort: { select: { name: true } },
+      departurePort: { select: { name: true, timeZone: true } },
+      destinationPort: { select: { name: true, timeZone: true } },
       schedules: {
         where: {
           bookings: {
@@ -332,8 +363,8 @@ const bulkDeleteRoutes = async (userId: string, ids: string[]) => {
     },
     select: {
       id: true,
-      departurePort: { select: { name: true } },
-      destinationPort: { select: { name: true } },
+      departurePort: { select: { name: true, timeZone: true } },
+      destinationPort: { select: { name: true, timeZone: true } },
     },
   });
 
@@ -412,12 +443,14 @@ const getPublicConnectedPorts = async () => {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
       destinationPort: {
         select: {
           id: true,
           name: true,
+          timeZone: true,
         },
       },
     },
@@ -428,11 +461,13 @@ const getPublicConnectedPorts = async () => {
     {
       portId: string;
       portName: string;
+      timeZone: string;
       destinations: Map<
         string,
         {
           portId: string;
           portName: string;
+          timeZone: string;
         }
       >;
     }
@@ -446,6 +481,7 @@ const getPublicConnectedPorts = async () => {
       portMap.set(dep.id, {
         portId: dep.id,
         portName: dep.name,
+        timeZone: dep.timeZone,
         destinations: new Map(),
       });
     }
@@ -455,6 +491,7 @@ const getPublicConnectedPorts = async () => {
       depEntry.destinations.set(dest.id, {
         portId: dest.id,
         portName: dest.name,
+        timeZone: dest.timeZone,
       });
     }
   }
@@ -462,48 +499,14 @@ const getPublicConnectedPorts = async () => {
   return Array.from(portMap.values()).map(p => ({
     portId: p.portId,
     portName: p.portName,
+    timeZone: p.timeZone,
     destinations: Array.from(p.destinations.values()),
   }));
 };
 
-const KNOWN_DESTINATION_PROFILES: Record<
-  string,
-  {
-    category: 'speedboat' | 'scenic';
-    rating: number;
-    reviews: number;
-    highlights: string[];
-  }
-> = {
-  maafushi: {
-    category: 'speedboat',
-    rating: 4.9,
-    reviews: 620,
-    highlights: ['Air Conditioned', 'Fast Speedboat', 'Free 20kg Bag'],
-  },
-  thulusdhoo: {
-    category: 'speedboat',
-    rating: 4.8,
-    reviews: 410,
-    highlights: ['Surfboard Allowed', 'Scenic Deck', 'Fast WiFi'],
-  },
-  dhiffushi: {
-    category: 'scenic',
-    rating: 4.9,
-    reviews: 350,
-    highlights: ['Shaded Seating', 'Sunset Cruise', 'Snack Bar'],
-  },
-  gulhi: {
-    category: 'speedboat',
-    rating: 4.9,
-    reviews: 512,
-    highlights: ['Quick 30m Transfer', 'USB Charging', 'Pristine Sands'],
-  },
-};
-
 const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
   const limit = query?.limit ?? 4;
-  const requestedCategory = query?.category ?? 'all';
+  const now = new Date();
 
   const activeRoutes = await prisma.route.findMany({
     where: {
@@ -526,9 +529,11 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
           contactEmail: true,
         },
       },
+      // Only bookable, future departures count towards price and trip totals.
       schedules: {
         where: {
           status: { in: [TripStatus.ON_TIME, TripStatus.BOARDING, TripStatus.PREPARING] },
+          departureTime: { gte: now },
         },
         select: {
           id: true,
@@ -543,41 +548,36 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
           },
         },
       },
-      _count: {
-        select: {
-          schedules: true,
-        },
-      },
     },
   });
 
   const mapped = activeRoutes.map(route => {
-    const destNameLower = route.destinationPort.name.toLowerCase();
-    const matchedProfileKey = Object.keys(KNOWN_DESTINATION_PROFILES).find(key =>
-      destNameLower.includes(key),
-    );
-
-    const profile = matchedProfileKey
-      ? KNOWN_DESTINATION_PROFILES[matchedProfileKey]
-      : {
-          category: (route.durationMinutes <= 40 ? 'speedboat' : 'scenic') as 'speedboat' | 'scenic',
-          rating: 4.8,
-          reviews: 280,
-          highlights: ['Air Conditioned', 'Life Jackets Provided', 'Luggage Space'],
-        };
-
     const adultFares = route.schedules
       .map(s => s.adultFare)
       .filter(f => typeof f === 'number' && f > 0);
-    const startingPrice = adultFares.length > 0 ? Math.min(...adultFares) : (route.basePrice ?? 30);
+    // Real fare only: cheapest upcoming adult fare, else the route's base price, else unknown.
+    const startingPrice =
+      adultFares.length > 0
+        ? Math.min(...adultFares)
+        : typeof route.basePrice === 'number' && route.basePrice > 0
+          ? route.basePrice
+          : null;
 
     const totalBookings = route.schedules.reduce(
       (sum, s) => sum + (s._count?.bookings ?? 0),
       0,
     );
-    const schedulesCount = route.schedules.length;
+    const upcomingTripsCount = route.schedules.length;
 
-    const popularityScore = totalBookings * 10 + schedulesCount;
+    // Earliest future departure that still has a free seat; null when none is bookable.
+    const nextDeparture = route.schedules
+      .filter(s => s.availableSeats > 0)
+      .reduce<Date | null>(
+        (earliest, s) => (!earliest || s.departureTime < earliest ? s.departureTime : earliest),
+        null,
+      );
+
+    const popularityScore = totalBookings * 10 + upcomingTripsCount;
 
     return {
       id: route.id,
@@ -586,46 +586,35 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
       fromPortId: route.departurePort.id,
       to: route.destinationPort.name,
       toPortId: route.destinationPort.id,
-      duration: `Approx. ${route.durationMinutes} min`,
       durationMinutes: route.durationMinutes,
-      price: startingPrice,
       startingPrice,
-      frequency: `${schedulesCount > 0 ? schedulesCount : 4} Daily Trips`,
-      dailyTripsCount: schedulesCount > 0 ? schedulesCount : 4,
+      upcomingTripsCount,
+      nextDepartureTime: nextDeparture ? nextDeparture.toISOString() : null,
       totalBookings,
       popularityScore,
-      rating: profile.rating,
-      reviews: profile.reviews + totalBookings,
-      highlights: (Array.isArray(route.amenities) && route.amenities.length > 0) ? route.amenities : profile.highlights,
+      highlights: Array.isArray(route.amenities) ? route.amenities : [],
       description: route.description || null,
       imageUrl: route.imageUrl || null,
-      category: profile.category,
       operatorName: route.operator.companyName,
       departurePort: {
         id: route.departurePort.id,
         name: route.departurePort.name,
+        timeZone: route.departurePort.timeZone,
       },
       destinationPort: {
         id: route.destinationPort.id,
         name: route.destinationPort.name,
+        timeZone: route.destinationPort.timeZone,
       },
     };
   });
 
-  const filtered =
-    requestedCategory && requestedCategory !== 'all'
-      ? mapped.filter(r => r.category === requestedCategory)
-      : mapped;
+  mapped.sort((a, b) => b.popularityScore - a.popularityScore);
 
-  filtered.sort((a, b) => b.popularityScore - a.popularityScore);
-
-  const topRoutes = filtered.slice(0, limit).map((route, index) => ({
+  return mapped.slice(0, limit).map((route, index) => ({
     ...route,
-    tag: index === 0 ? 'Most Popular' : null,
-    tagColor: index === 0 ? 'bg-blue-600 text-white' : null,
+    tag: index === 0 && route.totalBookings > 0 ? 'Most Popular' : null,
   }));
-
-  return topRoutes;
 };
 
 export const RouteService = {

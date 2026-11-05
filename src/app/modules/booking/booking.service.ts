@@ -7,12 +7,14 @@ import {
   PaymentStatus,
   Prisma,
   TripStatus,
+  TripType,
 } from '@prisma/client';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
 import config from '../../../config';
 import { DEFAULT_CURRENCY } from '../../../config/stripe';
 import { AdminService } from '../admin/admin.service';
+import { cancelPaymentIntentAfterCommit } from '../payment/payment.intentCancel';
 import { IBookingFilterOptions, ICreateBookingPayload } from './booking.interface';
 import {
   PaymentViewer,
@@ -20,6 +22,8 @@ import {
   emailsMatch,
   serializeBooking,
 } from './booking.payment';
+import { assertValidReturnLeg, resolveTripFare } from './booking.fare';
+import { bookingScheduleIds, releaseBookingSeats, takeSeats } from './booking.seats';
 
 /** Booking statuses that count as sold seats (spec 0001, AC-6). */
 export const SOLD_BOOKING_STATUSES: BookingStatus[] = [
@@ -33,9 +37,19 @@ const CANCELLABLE_BOOKING_STATUSES: BookingStatus[] = [
   BookingStatus.CONFIRMED,
 ];
 
+/** Trip statuses that still accept bookings. */
+const OPEN_TRIP_STATUSES: TripStatus[] = [
+  TripStatus.ON_TIME,
+  TripStatus.PREPARING,
+  TripStatus.BOARDING,
+];
+
+export const isTripOpenForBooking = (status: TripStatus): boolean =>
+  OPEN_TRIP_STATUSES.includes(status);
+
 const paymentInclude = { include: { refunds: true } } as const;
 
-const bookingDetailInclude = {
+export const bookingDetailInclude = {
   tickets: true,
   payment: paymentInclude,
   schedule: {
@@ -45,6 +59,17 @@ const bookingDetailInclude = {
           departurePort: true,
           destinationPort: true,
           operator: true,
+        },
+      },
+      ferry: true,
+    },
+  },
+  returnSchedule: {
+    include: {
+      route: {
+        include: {
+          departurePort: true,
+          destinationPort: true,
         },
       },
       ferry: true,
@@ -100,61 +125,76 @@ const createBooking = async (
   // One settings read per booking: commission snapshot and hold length (spec 0001, value sourcing).
   const settings = await AdminService.getOrCreatePlatformSettings();
 
+  const tripType = payload.tripType ?? TripType.ONE_WAY;
+  const returnScheduleId =
+    tripType === TripType.ONE_WAY ? null : (payload.returnScheduleId ?? null);
+
   return prisma.$transaction(async transactionClient => {
-    const targetSchedule = await transactionClient.schedule.findUnique({
-      where: { id: payload.scheduleId },
-      include: {
-        route: {
-          include: {
-            departurePort: true,
-            destinationPort: true,
-            operator: true,
-          },
-        },
-        ferry: true,
-      },
-    });
+    const loadOpenSchedule = async (scheduleId: string, isReturn: boolean) => {
+      const schedule = await transactionClient.schedule.findUnique({
+        where: { id: scheduleId },
+        // The departure port zone decides the leg's local day (same day return, spec 0003).
+        include: { route: { include: { departurePort: true } } },
+      });
 
-    if (!targetSchedule) {
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Selected schedule not found');
-    }
+      if (!schedule) {
+        throw new ApiError(
+          StatusCodes.NOT_FOUND,
+          isReturn ? 'Selected return trip not found' : 'Selected schedule not found',
+        );
+      }
 
-    const isScheduleOpenForBooking = (
-      [
-        TripStatus.ON_TIME,
-        TripStatus.PREPARING,
-        TripStatus.BOARDING,
-      ] as TripStatus[]
-    ).includes(targetSchedule.status);
+      if (!isTripOpenForBooking(schedule.status)) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          isReturn
+            ? 'Cannot book tickets on a departed or cancelled return trip'
+            : 'Cannot book tickets on a departed or cancelled trip',
+        );
+      }
 
-    if (!isScheduleOpenForBooking) {
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        'Cannot book tickets on a departed or cancelled trip',
-      );
-    }
+      // A trip whose departure time has passed is gone, whatever its status still says
+      // (operators often never flip it to DEPARTED).
+      if (schedule.departureTime.getTime() <= Date.now()) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          isReturn ? 'The selected return trip has already departed' : 'This trip has already departed',
+        );
+      }
 
-    // Fast path only. The conditional update below is what actually prevents overselling (AC-4).
-    if (targetSchedule.availableSeats < totalPassengers) {
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        'Not enough available seats on this trip',
-      );
-    }
+      // Fast path only. takeSeats below is what actually prevents overselling (AC-4).
+      if (schedule.availableSeats < totalPassengers) {
+        throw new ApiError(
+          StatusCodes.BAD_REQUEST,
+          isReturn
+            ? 'Not enough available seats on the return trip'
+            : 'Not enough available seats on this trip',
+        );
+      }
 
-    const seatReservation = await transactionClient.schedule.updateMany({
-      where: {
-        id: payload.scheduleId,
-        availableSeats: { gte: totalPassengers },
-      },
-      data: {
-        availableSeats: {
-          decrement: totalPassengers,
-        },
-      },
-    });
+      return schedule;
+    };
 
-    if (seatReservation.count !== 1) {
+    const targetSchedule = await loadOpenSchedule(payload.scheduleId, false);
+    const returnSchedule = returnScheduleId
+      ? await loadOpenSchedule(returnScheduleId, true)
+      : null;
+
+    assertValidReturnLeg(tripType, targetSchedule, returnSchedule);
+    const fare = resolveTripFare(tripType, targetSchedule);
+
+    const seatsTaken = await takeSeats(
+      transactionClient,
+      bookingScheduleIds({
+        scheduleId: targetSchedule.id,
+        returnScheduleId,
+        adultsCount: payload.adultsCount,
+        childrenCount,
+      }),
+      totalPassengers,
+    );
+
+    if (!seatsTaken) {
       throw new ApiError(
         StatusCodes.BAD_REQUEST,
         'Not enough available seats on this trip',
@@ -164,8 +204,8 @@ const createBooking = async (
     const amounts = calculateBookingAmounts({
       adultsCount: payload.adultsCount,
       childrenCount,
-      adultFare: targetSchedule.adultFare,
-      childFare: targetSchedule.childFare,
+      adultFare: fare.adultFare,
+      childFare: fare.childFare,
       commissionRate: settings.commissionRate,
     });
 
@@ -179,6 +219,8 @@ const createBooking = async (
         reference: bookingReference,
         userId,
         scheduleId: payload.scheduleId,
+        tripType,
+        returnScheduleId,
         leadPassengerName: payload.leadPassengerName,
         leadPassengerEmail: payload.leadPassengerEmail,
         leadPassengerPhone: payload.leadPassengerPhone,
@@ -277,7 +319,7 @@ const cancelBooking = async (
 ) => {
   const isAdmin = requester.role === 'ADMIN';
 
-  return prisma.$transaction(async transactionClient => {
+  const { cancelled, intentToCancel } = await prisma.$transaction(async transactionClient => {
     const isUuid = UUID_REGEX.test(bookingIdentifier);
     const existingBooking = await transactionClient.booking.findFirst({
       where: {
@@ -325,6 +367,16 @@ const cancelBooking = async (
       );
     }
 
+    // Spec 0002, AC-15: money was collected and there is no refund on cancel yet, so only an
+    // admin may cancel (and refunds by hand). Scope feature 6 replaces this rule.
+    if (
+      !isAdmin &&
+      existingBooking.payment?.provider === PaymentProvider.STRIPE &&
+      existingBooking.payment.status === PaymentStatus.COMPLETED
+    ) {
+      throw new ApiError(StatusCodes.CONFLICT, 'Contact support to cancel a paid booking');
+    }
+
     // Conditional transition: only one of two concurrent cancels can win, so seats return once (AC-5).
     const cancellation = await transactionClient.booking.updateMany({
       where: {
@@ -338,14 +390,8 @@ const cancelBooking = async (
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Booking is already cancelled');
     }
 
-    await transactionClient.schedule.update({
-      where: { id: existingBooking.scheduleId },
-      data: {
-        availableSeats: {
-          increment: existingBooking.adultsCount + existingBooking.childrenCount,
-        },
-      },
-    });
+    // Outbound and, for a return trip, the return leg too.
+    await releaseBookingSeats(transactionClient, existingBooking);
 
     // Nothing was collected yet, so the payment is simply cancelled. A COMPLETED payment
     // stays COMPLETED until the refund flow (feature 6) returns the money.
@@ -361,8 +407,22 @@ const cancelBooking = async (
       include: { tickets: true, payment: paymentInclude },
     });
 
-    return serializeBooking(cancelledBooking, isAdmin ? 'ADMIN' : 'CUSTOMER');
+    return {
+      cancelled: serializeBooking(cancelledBooking, isAdmin ? 'ADMIN' : 'CUSTOMER'),
+      // A PENDING booking's intent is cancelled in Stripe once this commit is final.
+      intentToCancel:
+        existingBooking.status === BookingStatus.PENDING &&
+        existingBooking.payment?.stripePaymentIntentId
+          ? existingBooking.payment
+          : null,
+    };
   });
+
+  if (intentToCancel) {
+    // Never throws; a payment that succeeded meanwhile is refunded (CUSTOMER_CANCEL).
+    await cancelPaymentIntentAfterCommit(intentToCancel, 'cancel');
+  }
+  return cancelled;
 };
 
 const buildBookingSearchWhere = (
@@ -490,7 +550,7 @@ const listAdminBookings = async (options: IBookingFilterOptions) => {
     ...buildBookingSearchWhere(options),
   };
 
-  const [bookings, totalCount] = await Promise.all([
+  const [bookings, totalCount, statusGroups] = await Promise.all([
     prisma.booking.findMany({
       where: whereClause,
       skip,
@@ -499,7 +559,21 @@ const listAdminBookings = async (options: IBookingFilterOptions) => {
       include: bookingDetailInclude,
     }),
     prisma.booking.count({ where: whereClause }),
+    // Per-status totals for the status tabs and KPI cards. They follow the search
+    // but ignore the status filter, so every tab shows its own count.
+    prisma.booking.groupBy({
+      by: ['status'],
+      where: buildBookingSearchWhere(options),
+      _count: { _all: true },
+    }),
   ]);
+
+  const statusCounts = Object.fromEntries(
+    Object.values(BookingStatus).map(status => [status, 0]),
+  ) as Record<BookingStatus, number>;
+  for (const group of statusGroups) {
+    statusCounts[group.status] = group._count._all;
+  }
 
   return {
     meta: {
@@ -507,6 +581,7 @@ const listAdminBookings = async (options: IBookingFilterOptions) => {
       limit,
       total: totalCount,
       totalPages: Math.ceil(totalCount / limit),
+      statusCounts,
     },
     data: bookings.map(booking => serializeBooking(booking, 'ADMIN')),
   };

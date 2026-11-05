@@ -1,10 +1,12 @@
 export interface ICreatePortPayload {
   name: string;
+  timeZone: string;
   isActive?: boolean;
 }
 
 export interface IUpdatePortPayload {
   name?: string;
+  timeZone?: string;
   isActive?: boolean;
 }
 
