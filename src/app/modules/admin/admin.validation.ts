@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { ADMIN_PAYMENT_SORT_FIELDS } from './admin.interface';
+import { PaymentStatus, RefundReason, RefundStatus } from '@prisma/client';
+import {
+  ADMIN_PAYMENT_SORT_FIELDS,
+  ADMIN_PAYOUT_SORT_FIELDS,
+  ADMIN_REFUND_SORT_FIELDS,
+} from './admin.interface';
 
 const updateCommissionZodSchema = z
   .object({
@@ -20,32 +25,89 @@ const updateCommissionZodSchema = z
     { message: 'Provide at least one of rate, schedule, or seatHoldMinutes', path: ['rate'] },
   );
 
-const updatePlatformZodSchema = z.object({
-  name: z.string().min(1, 'Platform name cannot be empty').optional(),
-  email: z.email('Valid support email required').optional(),
-});
+/** Spec 0006, AC-9: a calendar date (UTC day). */
+const ymd = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-30')
+  .refine(value => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+  }, 'Not a real date');
+
+const rangeFields = {
+  from: ymd.optional(),
+  to: ymd.optional(),
+  format: z.enum(['json', 'csv']).optional(),
+};
+
+const fromBeforeTo = (data: { from?: string; to?: string }) => !data.from || !data.to || data.from <= data.to;
+const RANGE_ERROR = { message: 'The start date must be on or before the end date', path: ['from'] };
+
+const pageFields = {
+  page: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+};
+
+const search = z.string().trim().max(100).optional();
+const operatorId = z.string().uuid('operatorId must be a valid UUID').optional();
 
 const listPaymentsQueryZodSchema = z.object({
   query: z
     .object({
-      page: z.coerce.number().int().positive().optional(),
-      limit: z.coerce.number().int().positive().max(100).optional(),
-      status: z.string().optional(),
-      search: z.string().optional(),
-      searchTerm: z.string().optional(),
+      ...rangeFields,
+      ...pageFields,
+      status: z.enum(PaymentStatus).optional(),
+      operatorId,
+      search,
       sortBy: z.enum(ADMIN_PAYMENT_SORT_FIELDS).optional(),
+    })
+    .refine(fromBeforeTo, RANGE_ERROR),
+});
+
+const listRefundsQueryZodSchema = z.object({
+  query: z
+    .object({
+      ...rangeFields,
+      ...pageFields,
+      status: z.enum(RefundStatus).optional(),
+      reason: z.enum(RefundReason).optional(),
+      operatorId,
+      search,
+      sortBy: z.enum(ADMIN_REFUND_SORT_FIELDS).optional(),
+    })
+    .refine(fromBeforeTo, RANGE_ERROR),
+});
+
+const listPayoutsQueryZodSchema = z.object({
+  query: z
+    .object({
+      ...rangeFields,
+      operatorId,
+      sortBy: z.enum(ADMIN_PAYOUT_SORT_FIELDS).optional(),
       sortOrder: z.enum(['asc', 'desc']).optional(),
     })
-    .optional(),
+    .refine(fromBeforeTo, RANGE_ERROR),
+});
+
+const payoutBookingsZodSchema = z.object({
+  params: z.object({ operatorId: z.string().uuid('operatorId must be a valid UUID') }),
+  query: z
+    .object({
+      ...rangeFields,
+      page: pageFields.page,
+      limit: pageFields.limit,
+    })
+    .refine(fromBeforeTo, RANGE_ERROR),
 });
 
 export const AdminValidation = {
   updateCommissionZodSchema,
-  updatePlatformZodSchema,
   listPaymentsQueryZodSchema,
+  listRefundsQueryZodSchema,
+  listPayoutsQueryZodSchema,
+  payoutBookingsZodSchema,
 };
 
 export type UpdateCommissionDTO = z.infer<typeof updateCommissionZodSchema>;
-export type UpdatePlatformDTO = z.infer<typeof updatePlatformZodSchema>;
-export type ListPaymentsQueryDTO = z.infer<typeof listPaymentsQueryZodSchema>;
 

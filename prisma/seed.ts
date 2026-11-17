@@ -25,10 +25,10 @@
 
 import { PrismaClient, VesselType, VesselStatus, TripStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
-import { getDynamicVesselImage } from '../src/shared/mediaCatalog';
-import { portToday, wallTimeToInstant } from '../src/shared/portTime';
+import { getDynamicPortImage, getDynamicVesselImage } from '../src/shared/mediaCatalog';
+import { describeRoute } from '../src/shared/routeDescription';
 
-/** `YYYY-MM-DD` plus `days` calendar days (UTC arithmetic on a date only, no zone involved). */
+/** `YYYY-MM-DD` plus `days` calendar days (UTC). */
 const addCalendarDays = (ymd: string, days: number) =>
   new Date(Date.parse(`${ymd}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 
@@ -59,13 +59,12 @@ async function main() {
   console.log('  → Seeding Ports...');
 
   const portData = [
-    // Each port's IANA zone: trip times are shown and read in it (spec 0003).
-    { name: 'Blowing Point, Anguilla', timeZone: 'America/Anguilla' },
-    { name: 'Marigot, Saint Martin', timeZone: 'America/Marigot' },
-    { name: 'Philipsburg, Sint Maarten', timeZone: 'America/Lower_Princes' },
-    { name: 'Fort Bay Harbor, Saba', timeZone: 'America/Kralendijk' },
-    { name: 'Gallows Bay, Sint Eustatius', timeZone: 'America/Kralendijk' },
-    { name: 'Port Zante, St. Kitts', timeZone: 'America/St_Kitts' },
+    { name: 'Blowing Point, Anguilla' },
+    { name: 'Marigot, Saint Martin' },
+    { name: 'Philipsburg, Sint Maarten' },
+    { name: 'Fort Bay Harbor, Saba' },
+    { name: 'Gallows Bay, Sint Eustatius' },
+    { name: 'Port Zante, St. Kitts' },
   ];
 
   // Clean up any legacy ports not in the allowed port list
@@ -101,7 +100,7 @@ async function main() {
     portData.map((p) =>
       prisma.port.upsert({
         where: { name: p.name },
-        update: { isActive: true, timeZone: p.timeZone },
+        update: { isActive: true },
         create: { ...p, isActive: true },
       })
     )
@@ -221,12 +220,12 @@ async function main() {
     ? await prisma.operatorProfile.findFirst({ where: { user: { email: 'operator001@elineuque.com' } } })
     : null;
   if (realMakanaProfile && legacyOperator001) {
-    // Hand over anything left on an old operator001 account (routes carry their schedules).
+    // Hand over anything left on an old operator001 account (ferries carry their schedules;
+    // routes are shared and have no owner).
     const fromId = legacyOperator001.id;
-    const movedRoutes = await prisma.route.updateMany({ where: { operatorId: fromId }, data: { operatorId: makanaProfile.id } });
     const movedFerries = await prisma.ferry.updateMany({ where: { operatorId: fromId }, data: { operatorId: makanaProfile.id } });
     await prisma.offDay.updateMany({ where: { operatorId: fromId }, data: { operatorId: makanaProfile.id } });
-    console.log(`     ✓ Makana owner = ${MAKANA_OWNER_EMAIL} (moved ${movedRoutes.count} routes, ${movedFerries.count} ferries from operator001)`);
+    console.log(`     ✓ Makana owner = ${MAKANA_OWNER_EMAIL} (moved ${movedFerries.count} ferries from operator001)`);
   }
   // Every route and ferry belongs to Makana (the only operator).
   const operatorProfileAt = (_idx: number) => makanaProfile;
@@ -292,8 +291,9 @@ async function main() {
     '5-3': [126, 83, null, 96, 53, null],
     '5-2': [253, 159, null, 203, 124, null],
   };
-  const bundleFaresFor = (key: string) => {
-    const row = clientFareMatrix[key];
+  /** Round trip / same day fares for a seeded schedule (set per trip, from the client matrix). */
+  const bundleFaresFor = (routeId: string) => {
+    const row = clientFareMatrix[routeKeyById.get(routeId) ?? ''];
     return {
       adultRoundTripFare: row ? row[0] : null,
       childRoundTripFare: row ? row[3] : null,
@@ -302,6 +302,8 @@ async function main() {
     };
   };
   const routeKeyById = new Map<string, string>();
+  /** Which operator's ferries the seed schedules on each (shared) route. */
+  const seedOperatorByRouteId = new Map<string, string>();
   /** One way fares for a seeded schedule: the client matrix when the route has one. */
   const oneWayFaresFor = (routeId: string) => {
     const row = clientFareMatrix[routeKeyById.get(routeId) ?? ''];
@@ -318,45 +320,47 @@ async function main() {
       const depPort = ports[fromIdx];
       const destPort = ports[toIdx];
       const details = routePairDetails[routeKey] ?? { durationMinutes: 45, adultFare: 35 };
-      const bundleFares = bundleFaresFor(routeKey);
 
-      // A client route seeded earlier under another operator is handed over to Makana.
-      const existing =
-        (await prisma.route.findFirst({
-          where: {
-            operatorId: opProfile.id,
+      // Routes are shared (one per port pair, admin managed); reuse the existing one.
+      const existing = await prisma.route.findUnique({
+        where: {
+          departurePortId_destinationPortId: {
             departurePortId: depPort.id,
             destinationPortId: destPort.id,
           },
-        })) ??
-        (isClientRoute
-          ? await prisma.route.findFirst({
-              where: { departurePortId: depPort.id, destinationPortId: destPort.id },
-            })
-          : null);
+        },
+      });
+
+      // Every route must have an image (user request 2026-11-15): the destination port's
+      // photo. An image already set (e.g. uploaded by an admin) is never overwritten.
+      const routeImage = getDynamicPortImage(destPort.name);
+      // Description is mandatory in the admin form and POST /routes; the seed writes through
+      // Prisma (no validation), so it must set one too. An existing description is kept.
+      const routeDescription = describeRoute(depPort.name, destPort.name, details.durationMinutes);
 
       const route = existing
         ? await prisma.route.update({
             where: { id: existing.id },
             data: {
-              operatorId: opProfile.id,
               durationMinutes: details.durationMinutes,
               status: 'ACTIVE',
-              ...bundleFares,
+              ...(!existing.imageUrl && { imageUrl: routeImage }),
+              ...(!existing.description?.trim() && { description: routeDescription }),
             },
           })
         : await prisma.route.create({
             data: {
-              operatorId: opProfile.id,
               departurePortId: depPort.id,
               destinationPortId: destPort.id,
               durationMinutes: details.durationMinutes,
+              imageUrl: routeImage,
+              description: routeDescription,
               isBorderCrossing: true,
               status: 'ACTIVE',
-              ...bundleFares,
             },
           });
       routeKeyById.set(route.id, routeKey);
+      seedOperatorByRouteId.set(route.id, opProfile.id);
       return route;
     })
   );
@@ -375,7 +379,7 @@ async function main() {
   };
 
   // Makana Ferry Service (operator001) — real fleet sheet.
-  // Ferry type blank → schema default (CATAMARAN). "Docked" → OUT_OF_SERVICE.
+  // Ferry type blank → schema default (CATAMARAN). "Docked" → MAINTENANCE.
   // Cruising speed is not stored in the schema.
   const MAKANA_MAINTENANCE_UNTIL = new Date(Date.UTC(2026, 10, 19)); // Nov 19, 2026
   const makanaFerryTemplates: FerryTemplate[] = [
@@ -392,7 +396,7 @@ async function main() {
       name: 'Samantha II',
       type: VesselType.CATAMARAN,
       capacity: 100,
-      status: VesselStatus.OUT_OF_SERVICE,
+      status: VesselStatus.MAINTENANCE,
       imageUrl: 'https://images.unsplash.com/photo-1749883530616-b3e0a1c544c5?auto=format&fit=crop&w=800&q=80',
     },
     {
@@ -466,14 +470,8 @@ async function main() {
 
   // ── 6c. M/V Makana maintenance blackout (today → Nov 19) ─────────────────
   const mvMakana = makanaFerries.find((f) => f.name === 'M/V Makana')!;
-  // Port zone of every port, so trips and off days follow local days (spec 0003).
-  const portZoneById = new Map(
-    (await prisma.port.findMany({ select: { id: true, timeZone: true } })).map((p) => [p.id, p.timeZone]),
-  );
-  // Off days are calendar dates at the operator's ports; start from today there.
-  const makanaRoute = routes.find((r) => r.operatorId === makanaProfile.id);
-  const makanaZone = (makanaRoute && portZoneById.get(makanaRoute.departurePortId)) || 'America/Kralendijk';
-  const makanaToday = portToday(makanaZone);
+  // Off days are calendar dates (UTC); start from today.
+  const makanaToday = new Date().toISOString().slice(0, 10);
   const maintenanceUntil = MAKANA_MAINTENANCE_UNTIL.toISOString().slice(0, 10);
   let maintenanceDays = 0;
   for (let ymd = makanaToday; ymd <= maintenanceUntil; ymd = addCalendarDays(ymd, 1)) {
@@ -497,7 +495,7 @@ async function main() {
   console.log(`     ✓ ${maintenanceDays} maintenance off-day(s) added for M/V Makana`);
 
   // ── 7. Schedules (Trips for Next 14 Days) ────────────────────────────────
-  console.log('  → Seeding Schedules (Trips for Next 14 Days)...');
+  console.log('  → Seeding Schedules (max 8, one per route)...');
 
   const timeSlots = [
     { hour: 8, minute: 30, gate: 'Pier 1', captain: 'Capt. Bryan Richardson' },
@@ -507,28 +505,30 @@ async function main() {
   ];
 
   let createdSchedulesCount = 0;
+  // Keep the dev DB small (user request 2026-11-15): one trip per route, tomorrow, max 8 in total.
+  const MAX_SEED_SCHEDULES = 8;
+  const SEED_DAYS = 1;
 
   for (const route of routes) {
+    if (createdSchedulesCount >= MAX_SEED_SCHEDULES) break;
     const opFerries = ferries.filter(
-      (f) => f.operatorId === route.operatorId && f.status === VesselStatus.IN_SERVICE,
+      (f) => f.operatorId === seedOperatorByRouteId.get(route.id) && f.status === VesselStatus.IN_SERVICE,
     );
     if (opFerries.length === 0) continue;
 
-    // Sailing times are wall clock times at the departure port (spec 0003, AC-12).
-    const zone = portZoneById.get(route.departurePortId)!;
-    const portTodayYmd = portToday(zone);
+    const todayYmd = new Date().toISOString().slice(0, 10);
 
-    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
-      const scheduleYmd = addCalendarDays(portTodayYmd, dayOffset);
-      const isWeekend = new Date(`${scheduleYmd}T12:00:00Z`).getUTCDay() === 0; // Sunday at the port
-      const slotsForDay = isWeekend ? timeSlots.slice(0, 2) : timeSlots.slice(0, 3);
+    for (let dayOffset = 1; dayOffset <= SEED_DAYS; dayOffset++) {
+      const scheduleYmd = addCalendarDays(todayYmd, dayOffset);
+      const isWeekend = new Date(`${scheduleYmd}T12:00:00Z`).getUTCDay() === 0; // Sunday
+      const slotsForDay = isWeekend ? timeSlots.slice(1, 2) : timeSlots.slice(0, 1);
 
       for (let sIdx = 0; sIdx < slotsForDay.length; sIdx++) {
         const slot = slotsForDay[sIdx];
         const assignedFerry = opFerries[sIdx % opFerries.length];
 
         const pad = (n: number) => String(n).padStart(2, '0');
-        const depTime = wallTimeToInstant(`${scheduleYmd}T${pad(slot.hour)}:${pad(slot.minute)}`, zone);
+        const depTime = new Date(`${scheduleYmd}T${pad(slot.hour)}:${pad(slot.minute)}:00.000Z`);
 
         const arrTime = new Date(depTime.getTime() + route.durationMinutes * 60000);
         const durationFare =
@@ -560,6 +560,7 @@ async function main() {
               arrivalTime: arrTime,
               adultFare,
               childFare,
+              ...bundleFaresFor(route.id),
               availableSeats: assignedFerry.capacity,
               status: TripStatus.ON_TIME,
               gate: slot.gate,
@@ -571,7 +572,7 @@ async function main() {
       }
     }
   }
-  console.log(`     ✓ ${createdSchedulesCount} new schedules created across next 14 days`);
+  console.log(`     ✓ ${createdSchedulesCount} new schedules created (max ${MAX_SEED_SCHEDULES})`);
 
   // ── Summary ──────────────────────────────────────────────────────────────
 

@@ -25,7 +25,6 @@ const buildProviderOrderBy = (
     contactPersonName: { contactPersonName: sortOrder },
     status: { user: { status: sortOrder } },
     ferriesCount: { ferries: { _count: sortOrder } },
-    routesCount: { routes: { _count: sortOrder } },
   };
   // Tie-breakers keep page boundaries stable when sort values repeat.
   return [primary[sortBy], { createdAt: 'desc' }, { id: 'asc' }];
@@ -78,12 +77,13 @@ const listProviders = async (filters: IProviderFilterRequest) => {
         _count: {
           select: {
             ferries: true,
-            routes: true,
           },
         },
       },
     }),
   ]);
+
+  const routesRun = await countRoutesRunByOperators(providers.map(p => p.id));
 
   const formattedProviders = providers.map(p => ({
     id: p.id,
@@ -97,7 +97,7 @@ const listProviders = async (filters: IProviderFilterRequest) => {
     updatedAt: p.updatedAt,
     user: p.user,
     ferriesCount: p._count.ferries,
-    routesCount: p._count.routes,
+    routesCount: routesRun.get(p.id) ?? 0,
   }));
 
   const totalPages = Math.ceil(total / limit);
@@ -131,17 +131,9 @@ const getProviderById = async (providerId: string) => {
       ferries: {
         orderBy: { createdAt: 'desc' },
       },
-      routes: {
-        include: {
-          departurePort: true,
-          destinationPort: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      },
       _count: {
         select: {
           ferries: true,
-          routes: true,
           offDays: true,
         },
       },
@@ -155,7 +147,42 @@ const getProviderById = async (providerId: string) => {
     );
   }
 
-  return provider;
+  // Routes are shared; list the ones this operator runs trips on (any of its ferries).
+  const routes = await prisma.route.findMany({
+    where: { schedules: { some: { ferry: { operatorId: providerId } } } },
+    include: { departurePort: true, destinationPort: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return {
+    ...provider,
+    routes,
+    _count: { ...provider._count, routes: routes.length },
+  };
+};
+
+/**
+ * Number of distinct (shared) routes each operator runs trips on.
+ * Operators no longer own routes, so this replaces the old per-operator route count.
+ */
+const countRoutesRunByOperators = async (operatorIds: string[]) => {
+  const counts = new Map<string, number>();
+  if (operatorIds.length === 0) return counts;
+
+  const pairs = await prisma.schedule.findMany({
+    where: { ferry: { operatorId: { in: operatorIds } } },
+    distinct: ['routeId', 'ferryId'],
+    select: { routeId: true, ferry: { select: { operatorId: true } } },
+  });
+
+  const routesByOperator = new Map<string, Set<string>>();
+  for (const { routeId, ferry } of pairs) {
+    const set = routesByOperator.get(ferry.operatorId) ?? new Set<string>();
+    set.add(routeId);
+    routesByOperator.set(ferry.operatorId, set);
+  }
+  for (const [operatorId, set] of routesByOperator) counts.set(operatorId, set.size);
+  return counts;
 };
 
 const updateProviderStatus = async (

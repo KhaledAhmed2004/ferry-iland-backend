@@ -55,7 +55,8 @@ const getTripManifest = async (
     },
   });
 
-  if (!schedule || schedule.route.operatorId !== operator.id) {
+  // The trip belongs to the operator who owns its ferry.
+  if (!schedule || schedule.ferry.operatorId !== operator.id) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Trip schedule not found');
   }
 
@@ -85,7 +86,14 @@ const getTripManifest = async (
     orderBy: { passengerName: 'asc' },
     include: {
       booking: {
-        select: { reference: true },
+        select: {
+          reference: true,
+          status: true,
+          leadPassengerName: true,
+          adultsCount: true,
+          childrenCount: true,
+          returnScheduleId: true,
+        },
       },
     },
   });
@@ -106,6 +114,12 @@ const getTripManifest = async (
     luggageCount: ticket.luggageCount,
     boardingStatus: ticket.boardingStatus,
     boardedAt: ticket.boardedAt,
+    booking: {
+      status: ticket.booking.status,
+      leadPassengerName: ticket.booking.leadPassengerName,
+      passengers: ticket.booking.adultsCount + ticket.booking.childrenCount,
+      hasReturn: !!ticket.booking.returnScheduleId,
+    },
   }));
 
   return {
@@ -117,9 +131,6 @@ const getTripManifest = async (
       destinationPort: schedule.route.destinationPort.name,
       departureTime: schedule.departureTime,
       arrivalTime: schedule.arrivalTime,
-      // Port zones so the manifest shows dock local times (spec 0003, AC-7).
-      departureTimeZone: schedule.route.departurePort.timeZone,
-      arrivalTimeZone: schedule.route.destinationPort.timeZone,
       tripStatus: schedule.status,
       totalPassengers,
       boardedPassengers,
@@ -141,7 +152,7 @@ const boardPassenger = async (
       booking: {
         include: {
           schedule: {
-            include: { route: true },
+            include: { ferry: { select: { operatorId: true } } },
           },
         },
       },
@@ -150,7 +161,7 @@ const boardPassenger = async (
 
   if (
     !ticket ||
-    ticket.booking.schedule.route.operatorId !== operator.id
+    ticket.booking.schedule.ferry.operatorId !== operator.id
   ) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger ticket not found');
   }
@@ -183,7 +194,7 @@ const unboardPassenger = async (userId: string, ticketId: string) => {
       booking: {
         include: {
           schedule: {
-            include: { route: true },
+            include: { ferry: { select: { operatorId: true } } },
           },
         },
       },
@@ -192,7 +203,7 @@ const unboardPassenger = async (userId: string, ticketId: string) => {
 
   if (
     !ticket ||
-    ticket.booking.schedule.route.operatorId !== operator.id
+    ticket.booking.schedule.ferry.operatorId !== operator.id
   ) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Passenger ticket not found');
   }
@@ -240,10 +251,9 @@ const getDigitalPass = async (identifier: string) => {
                 include: {
                   departurePort: true,
                   destinationPort: true,
-                  operator: true,
                 },
               },
-              ferry: true,
+              ferry: { include: { operator: true } },
             },
           },
           returnSchedule: {
@@ -275,15 +285,12 @@ const getDigitalPass = async (identifier: string) => {
     boardedAt: ticket.boardedAt,
     trip: {
       tripId: ticket.booking.schedule.id,
-      operatorName: ticket.booking.schedule.route.operator.companyName,
+      operatorName: ticket.booking.schedule.ferry.operator.companyName,
       vesselName: ticket.booking.schedule.ferry.name,
       departurePort: ticket.booking.schedule.route.departurePort.name,
       destinationPort: ticket.booking.schedule.route.destinationPort.name,
       departureTime: ticket.booking.schedule.departureTime,
       arrivalTime: ticket.booking.schedule.arrivalTime,
-      // Port zones so the pass shows dock local times (spec 0003).
-      departureTimeZone: ticket.booking.schedule.route.departurePort.timeZone,
-      arrivalTimeZone: ticket.booking.schedule.route.destinationPort.timeZone,
       gate: ticket.booking.schedule.gate,
     },
     // Round trip / same day return: the same ticket is used on the return ferry.
@@ -300,12 +307,10 @@ const getDigitalPass = async (identifier: string) => {
             departurePort: {
               id: returnSchedule.route.departurePort.id,
               name: returnSchedule.route.departurePort.name,
-              timeZone: returnSchedule.route.departurePort.timeZone,
             },
             destinationPort: {
               id: returnSchedule.route.destinationPort.id,
               name: returnSchedule.route.destinationPort.name,
-              timeZone: returnSchedule.route.destinationPort.timeZone,
             },
           },
           ferry: { id: returnSchedule.ferry.id, name: returnSchedule.ferry.name },

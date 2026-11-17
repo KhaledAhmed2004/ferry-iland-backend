@@ -7,7 +7,7 @@ import { IAuthUser } from '../auth/auth.interface';
 
 const createRoute = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await RouteService.createRoute(user.id, req.body);
+  const result = await RouteService.createRoute(req.body);
 
   sendResponse(res, {
     statusCode: StatusCodes.CREATED,
@@ -19,7 +19,7 @@ const createRoute = catchAsync(async (req: Request, res: Response) => {
 
 const listRoutes = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await RouteService.listOperatorRoutes(user.id, req.query as any);
+  const result = await RouteService.listRoutes(user.role, req.query as any);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -29,21 +29,10 @@ const listRoutes = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getRouteById = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-  const result = await RouteService.getRouteById(user.id, req.params.id);
-
-  sendResponse(res, {
-    statusCode: StatusCodes.OK,
-    success: true,
-    message: 'Route retrieved successfully',
-    data: result,
-  });
-});
-
 const updateRoute = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await RouteService.updateRoute(user.id, req.params.id, req.body);
+  const routeId = req.params.routeId || req.params.id;
+  const result = await RouteService.updateRoute(routeId, req.body);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -55,7 +44,8 @@ const updateRoute = catchAsync(async (req: Request, res: Response) => {
 
 const deleteRoute = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await RouteService.deleteRoute(user.id, req.params.id);
+  const routeId = req.params.routeId || req.params.id;
+  const result = await RouteService.deleteRoute(routeId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -68,7 +58,7 @@ const deleteRoute = catchAsync(async (req: Request, res: Response) => {
 const bulkUpdateRouteStatus = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
   const { ids, status } = req.body;
-  const result = await RouteService.bulkUpdateRouteStatus(user.id, ids, status);
+  const result = await RouteService.bulkUpdateRouteStatus(ids, status);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -81,7 +71,7 @@ const bulkUpdateRouteStatus = catchAsync(async (req: Request, res: Response) => 
 const bulkDeleteRoutes = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
   const { ids } = req.body;
-  const result = await RouteService.bulkDeleteRoutes(user.id, ids);
+  const result = await RouteService.bulkDeleteRoutes(ids);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -116,7 +106,6 @@ const getPopularRoutes = catchAsync(async (req: Request, res: Response) => {
 export const RouteController = {
   createRoute,
   listRoutes,
-  getRouteById,
   updateRoute,
   deleteRoute,
   bulkUpdateRouteStatus,

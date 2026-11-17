@@ -19,8 +19,8 @@ export default {
 
   // Project branding configuration
   app: {
-    name: process.env.APP_NAME || 'Educoin Backend',
-    tagline: process.env.APP_TAGLINE || 'Enterprise API',
+    name: process.env.APP_NAME || 'IslandHop Backend',
+    tagline: process.env.APP_TAGLINE || 'Maritime Ferry Booking Platform API',
     version: process.env.APP_VERSION || '1.0.0',
   },
 
@@ -114,24 +114,6 @@ export default {
         },
       },
     },
-  },
-
-  // In-App Purchase (IAP) Configuration
-  iap: {
-    productId: process.env.IAP_PRODUCT_ID || 'ekkali_premium_yearly',
-    appleSharedSecret:
-      process.env.APPLE_SHARED_SECRET || 'd80a9f618b89421caa13ca23b2c8c996',
-    appleKeyId: process.env.APPLE_KEY_ID || '6GCW7YAAQC',
-    appleIssuerId:
-      process.env.APPLE_ISSUER_ID || 'f9ed49c4-524c-4933-867e-beff6c0e005d',
-    appleTeamId: process.env.APPLE_TEAM_ID || 'L2S8P8TC9Z',
-    appleKeyPath:
-      process.env.APPLE_KEY_PATH ||
-      path.join(process.cwd(), 'keys', 'apple-subscription-key.p8'),
-    googlePackageName: process.env.GOOGLE_PACKAGE_NAME || 'com.moeb26.app',
-    googleServiceAccountKeyPath:
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH ||
-      path.join(process.cwd(), 'keys', 'google-service-account.json'),
   },
 };
 

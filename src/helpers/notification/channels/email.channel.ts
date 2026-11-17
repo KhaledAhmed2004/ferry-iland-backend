@@ -44,7 +44,7 @@ export const sendEmail = async (
       await EmailService.sendNotification({
         email: user.email,
         name: user.name,
-        title: content.subject || 'Moeb26 Notification',
+        title: content.subject || 'IslandHop Notification',
         message: variables.message || variables.text || 'You have a new notification.',
         actionText: variables.actionText,
         actionUrl: variables.actionUrl,

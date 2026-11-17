@@ -80,12 +80,10 @@ export interface IOperatorDepartureQueueItem {
     departurePort: {
       name: string;
       code: string | null;
-      timeZone: string;
     };
     destinationPort: {
       name: string;
       code: string | null;
-      timeZone: string;
     };
   };
   ferry: {
@@ -108,7 +106,6 @@ export interface IOperatorRecentBookingItem {
   leadPassengerEmail: string;
   route: string;
   departureTime: Date;
-  departureTimeZone: string | null;
   pax: number;
   amount: number;
   totalAmount: number;

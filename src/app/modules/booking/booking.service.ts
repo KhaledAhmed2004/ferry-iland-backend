@@ -2,15 +2,27 @@ import crypto from 'crypto';
 import { StatusCodes } from 'http-status-codes';
 import {
   BoardingStatus,
+  BookingRequestStatus,
   BookingStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
+  RefundReason,
   TripStatus,
   TripType,
 } from '@prisma/client';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
+import { sendRefunds } from '../payment/payment.refund';
+import {
+  claimBooking,
+  getCancellationInfo,
+  isWithinFreeCancel,
+  policyError,
+} from './booking.policy';
+import { IBookingRequester, assertBookingAccess, bookingIdentifierWhere } from './booking.access';
+import { applyCancellation } from './booking.cancel';
+import { BookingEmails } from './booking.email';
 import config from '../../../config';
 import { DEFAULT_CURRENCY } from '../../../config/stripe';
 import { AdminService } from '../admin/admin.service';
@@ -23,7 +35,7 @@ import {
   serializeBooking,
 } from './booking.payment';
 import { assertValidReturnLeg, resolveTripFare } from './booking.fare';
-import { bookingScheduleIds, releaseBookingSeats, takeSeats } from './booking.seats';
+import { bookingScheduleIds, takeSeats } from './booking.seats';
 
 /** Booking statuses that count as sold seats (spec 0001, AC-6). */
 export const SOLD_BOOKING_STATUSES: BookingStatus[] = [
@@ -58,10 +70,10 @@ export const bookingDetailInclude = {
         include: {
           departurePort: true,
           destinationPort: true,
-          operator: true,
         },
       },
-      ferry: true,
+      // Routes are shared; the operator running the trip is the ferry's owner.
+      ferry: { include: { operator: true } },
     },
   },
   returnSchedule: {
@@ -77,11 +89,7 @@ export const bookingDetailInclude = {
   },
 } satisfies Prisma.BookingInclude;
 
-export type IBookingRequester = {
-  userId: string | null;
-  role?: string | null;
-  email?: string | null;
-};
+export type { IBookingRequester };
 
 const resolveOperatorProfile = async (userId: string) => {
   const operator = await prisma.operatorProfile.findUnique({
@@ -133,8 +141,10 @@ const createBooking = async (
     const loadOpenSchedule = async (scheduleId: string, isReturn: boolean) => {
       const schedule = await transactionClient.schedule.findUnique({
         where: { id: scheduleId },
-        // The departure port zone decides the leg's local day (same day return, spec 0003).
-        include: { route: { include: { departurePort: true } } },
+        include: {
+          route: { include: { departurePort: true } },
+          ferry: { select: { operatorId: true } },
+        },
       });
 
       if (!schedule) {
@@ -275,14 +285,35 @@ const createBooking = async (
   });
 };
 
+/** The customer's booking read: detail plus every request, for the cancellation block. */
+const customerBookingInclude = {
+  ...bookingDetailInclude,
+  requests: { orderBy: { createdAt: 'desc' } },
+} satisfies Prisma.BookingInclude;
+
+type CustomerBooking = Prisma.BookingGetPayload<{ include: typeof customerBookingInclude }>;
+
+/** Shapes a booking for the customer with its spec 0004 `cancellation` block (AC-4). */
+const withCancellation = (
+  booking: CustomerBooking,
+  viewer: PaymentViewer,
+  now: Date = new Date(),
+) => {
+  const { requests: _requests, ...rest } = booking;
+  return {
+    ...serializeBooking(rest, viewer),
+    cancellation: getCancellationInfo(booking, now),
+  };
+};
+
 const getMyBookings = async (userId: string) => {
   const bookings = await prisma.booking.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
-    include: bookingDetailInclude,
+    include: customerBookingInclude,
   });
 
-  return bookings.map(booking => serializeBooking(booking, 'CUSTOMER'));
+  return bookings.map(booking => withCancellation(booking, 'CUSTOMER'));
 };
 
 /**
@@ -293,9 +324,9 @@ const getBookingByReference = async (
   reference: string,
   requester: IBookingRequester,
 ) => {
-  const booking = await prisma.booking.findUnique({
-    where: { reference },
-    include: bookingDetailInclude,
+  const booking = await prisma.booking.findFirst({
+    where: bookingIdentifierWhere(reference),
+    include: customerBookingInclude,
   });
 
   const isAdmin = requester.role === 'ADMIN';
@@ -307,57 +338,40 @@ const getBookingByReference = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'Booking reservation not found');
   }
 
-  return serializeBooking(booking, isAdmin ? 'ADMIN' : 'CUSTOMER');
+  return withCancellation(booking, isAdmin ? 'ADMIN' : 'CUSTOMER');
 };
 
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+/**
+ * Spec 0004. A customer cancels on their own up to 24h before the outbound departure and gets
+ * the full refundable amount back automatically; inside 24h they must send a request (409
+ * REQUEST_REQUIRED). An admin cancels at any time with an ADMIN refund and closes any pending
+ * request. A checked in booking is never cancelled (409 BOARDED).
+ */
 const cancelBooking = async (
   bookingIdentifier: string,
   requester: IBookingRequester,
+  now: Date = new Date(),
 ) => {
   const isAdmin = requester.role === 'ADMIN';
 
-  const { cancelled, intentToCancel } = await prisma.$transaction(async transactionClient => {
-    const isUuid = UUID_REGEX.test(bookingIdentifier);
+  const { cancelled, intentToCancel, refundIds } = await prisma.$transaction(async transactionClient => {
     const existingBooking = await transactionClient.booking.findFirst({
-      where: {
-        OR: [
-          ...(isUuid ? [{ id: bookingIdentifier }] : []),
-          { reference: bookingIdentifier },
-        ],
+      where: bookingIdentifierWhere(bookingIdentifier),
+      include: {
+        payment: { include: { refunds: true } },
+        schedule: { select: { departureTime: true } },
       },
-      include: { payment: true },
     });
 
-    if (!existingBooking) {
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
-    }
-
-    const isOwner =
-      !!existingBooking.userId &&
-      !!requester.userId &&
-      existingBooking.userId === requester.userId;
-    const hasMatchingEmail = emailsMatch(
-      existingBooking.leadPassengerEmail,
-      requester.email,
-    );
-
-    if (!(isAdmin || isOwner || hasMatchingEmail)) {
-      // A signed in user poking at someone else's account booking gets 403, as before.
-      // Anything else (guest booking, no or wrong email) gets 404 so the booking is not revealed.
-      if (requester.userId && existingBooking.userId) {
-        throw new ApiError(
-          StatusCodes.FORBIDDEN,
-          'You are not authorized to cancel this booking',
-        );
-      }
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Booking not found');
-    }
+    assertBookingAccess(existingBooking, requester, { allowAdmin: true, action: 'cancel' });
 
     if (existingBooking.status === BookingStatus.CANCELLED) {
       throw new ApiError(StatusCodes.BAD_REQUEST, 'Booking is already cancelled');
+    }
+
+    // The passenger already travelled on this booking, so it is used (spec 0004, AC-8, AC-20).
+    if (existingBooking.status === BookingStatus.CHECKED_IN) {
+      throw policyError('BOARDED', 'A checked in booking cannot be cancelled');
     }
 
     if (!CANCELLABLE_BOOKING_STATUSES.includes(existingBooking.status)) {
@@ -367,38 +381,35 @@ const cancelBooking = async (
       );
     }
 
-    // Spec 0002, AC-15: money was collected and there is no refund on cancel yet, so only an
-    // admin may cancel (and refunds by hand). Scope feature 6 replaces this rule.
+    // Inside 24h a customer asks instead; an unpaid hold may always be dropped (AC-2, AC-3).
     if (
       !isAdmin &&
-      existingBooking.payment?.provider === PaymentProvider.STRIPE &&
-      existingBooking.payment.status === PaymentStatus.COMPLETED
+      existingBooking.status === BookingStatus.CONFIRMED &&
+      !isWithinFreeCancel(existingBooking.schedule.departureTime, now)
     ) {
-      throw new ApiError(StatusCodes.CONFLICT, 'Contact support to cancel a paid booking');
+      throw policyError(
+        'REQUEST_REQUIRED',
+        'Your trip is less than 24 hours away. Please send a cancellation or reschedule request instead.',
+      );
     }
 
-    // Conditional transition: only one of two concurrent cancels can win, so seats return once (AC-5).
-    const cancellation = await transactionClient.booking.updateMany({
-      where: {
-        id: existingBooking.id,
-        status: { in: CANCELLABLE_BOOKING_STATUSES },
-      },
-      data: { status: BookingStatus.CANCELLED, cancelledAt: new Date() },
+    // Claim, seats, payment, and the refund row, sent to Stripe after commit (AC-1, AC-13, AC-20).
+    const { refundIds } = await applyCancellation(transactionClient, existingBooking, {
+      reason: isAdmin ? RefundReason.ADMIN : RefundReason.CUSTOMER_CANCEL,
+      actorUserId: requester.userId,
+      now,
     });
 
-    if (cancellation.count !== 1) {
-      throw new ApiError(StatusCodes.BAD_REQUEST, 'Booking is already cancelled');
-    }
-
-    // Outbound and, for a return trip, the return leg too.
-    await releaseBookingSeats(transactionClient, existingBooking);
-
-    // Nothing was collected yet, so the payment is simply cancelled. A COMPLETED payment
-    // stays COMPLETED until the refund flow (feature 6) returns the money.
-    if (existingBooking.payment?.status === PaymentStatus.PENDING) {
-      await transactionClient.payment.update({
-        where: { id: existingBooking.payment.id },
-        data: { status: PaymentStatus.CANCELED },
+    // An admin cancel closes the customer's open request (AC-19).
+    if (isAdmin) {
+      await transactionClient.bookingRequest.updateMany({
+        where: { bookingId: existingBooking.id, status: BookingRequestStatus.PENDING },
+        data: {
+          status: BookingRequestStatus.CANCELLED,
+          staffNote: 'Closed: booking cancelled by admin',
+          resolvedByUserId: requester.userId,
+          resolvedAt: now,
+        },
       });
     }
 
@@ -406,9 +417,16 @@ const cancelBooking = async (
       where: { id: existingBooking.id },
       include: { tickets: true, payment: paymentInclude },
     });
+    const refund = cancelledBooking.payment?.refunds.find(r => refundIds.includes(r.id));
 
     return {
-      cancelled: serializeBooking(cancelledBooking, isAdmin ? 'ADMIN' : 'CUSTOMER'),
+      cancelled: {
+        ...serializeBooking(cancelledBooking, isAdmin ? 'ADMIN' : 'CUSTOMER'),
+        refund: refund
+          ? { id: refund.id, amountCents: refund.amountCents, status: refund.status }
+          : null,
+      },
+      refundIds,
       // A PENDING booking's intent is cancelled in Stripe once this commit is final.
       intentToCancel:
         existingBooking.status === BookingStatus.PENDING &&
@@ -421,6 +439,12 @@ const cancelBooking = async (
   if (intentToCancel) {
     // Never throws; a payment that succeeded meanwhile is refunded (CUSTOMER_CANCEL).
     await cancelPaymentIntentAfterCommit(intentToCancel, 'cancel');
+  }
+  // Never throws; a refund Stripe could not take yet stays PENDING for the sweep.
+  await sendRefunds(refundIds);
+  // The customer's own cancel with money going back gets an email (spec 0004, AC-17).
+  if (!isAdmin && cancelled.refund) {
+    void BookingEmails.sendSelfCancelRefund(cancelled.id, cancelled.refund.amountCents);
   }
   return cancelled;
 };
@@ -450,7 +474,7 @@ const listOperatorBookings = async (
 
   const whereClause: Prisma.BookingWhereInput = {
     schedule: {
-      route: {
+      ferry: {
         operatorId: operator.id,
       },
     },
@@ -507,14 +531,14 @@ const checkInBooking = async (userId: string, bookingId: string) => {
       where: { id: bookingId },
       include: {
         schedule: {
-          include: { route: true },
+          include: { ferry: { select: { operatorId: true } } },
         },
       },
     });
 
     if (
       !booking ||
-      booking.schedule.route.operatorId !== operator.id
+      booking.schedule.ferry.operatorId !== operator.id
     ) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Booking reservation not found');
     }
@@ -527,14 +551,27 @@ const checkInBooking = async (userId: string, bookingId: string) => {
       );
     }
 
+    // Compare and swap, so a concurrent cancel or move cannot interleave (spec 0004, AC-13).
+    await claimBooking(transactionClient, booking, { status: BookingStatus.CHECKED_IN });
+
     await transactionClient.ticket.updateMany({
       where: { bookingId },
       data: { boardingStatus: BoardingStatus.CHECKED_IN },
     });
 
-    return transactionClient.booking.update({
+    // The passenger boarded, so an open change request no longer applies (spec 0004, AC-19).
+    await transactionClient.bookingRequest.updateMany({
+      where: { bookingId, status: BookingRequestStatus.PENDING },
+      data: {
+        status: BookingRequestStatus.REJECTED,
+        staffNote: 'Closed: passenger checked in',
+        resolvedByUserId: userId,
+        resolvedAt: new Date(),
+      },
+    });
+
+    return transactionClient.booking.findUniqueOrThrow({
       where: { id: bookingId },
-      data: { status: BookingStatus.CHECKED_IN },
       include: { tickets: true },
     });
   });

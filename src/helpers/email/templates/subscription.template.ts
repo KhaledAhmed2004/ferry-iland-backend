@@ -6,7 +6,7 @@ export const subscriptionInvitationTemplate = (data: ISubscriptionInviteEmailDat
     <h2 style="margin: 0 0 16px 0; color: #F8FAFC; font-size: 20px; font-weight: 700; text-align: center;">Subscription Plan Invitation</h2>
     <p style="margin: 0 0 20px 0; color: #94A3B8; font-size: 15px; line-height: 24px; text-align: center;">
       Hello <strong style="color: #F8FAFC;">${data.name}</strong>,<br>
-      You are invited to join the <strong>${data.planName || 'Moeb26 Premium Driver Plan'}</strong>.
+      You are invited to join the <strong>${data.planName || 'IslandHop'}</strong>.
     </p>
 
     <div style="background-color: #0F172A; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); padding: 20px; margin: 24px 0; text-align: center;">
@@ -29,10 +29,10 @@ export const subscriptionInvitationTemplate = (data: ISubscriptionInviteEmailDat
 
   return {
     to: data.email,
-    subject: 'Complete Your Moeb26 Subscription',
+    subject: 'Complete Your IslandHop Subscription',
     html: wrapInEmailLayout({
       title: 'Subscription Invitation',
-      previewText: `Activate your ${data.planName || 'Moeb26'} subscription.`,
+      previewText: `Activate your ${data.planName || 'IslandHop'} subscription.`,
       content,
     }),
   };

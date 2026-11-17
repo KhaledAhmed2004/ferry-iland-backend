@@ -1,35 +1,55 @@
 import { z } from 'zod';
 
-const objectIdValidator = z
-  .string({ error: 'Legal ID is required' })
-  .regex(/^[0-9a-fA-F]{24}$/, { message: 'Invalid MongoDB ObjectId format' });
-
 const createLegalPage = z.object({
   body: z.object({
-    title: z.string({ error: 'Title is required' }).trim().min(1).max(200),
-    content: z.string().max(100000, 'Content cannot exceed 100,000 characters').optional(),
-  }),
-});
-
-const getLegalPage = z.object({
-  params: z.object({
-    legalId: objectIdValidator,
+    title: z
+      .string({ required_error: 'Title is required' })
+      .trim()
+      .min(1, 'Title cannot be empty')
+      .max(200, 'Title cannot exceed 200 characters'),
+    slug: z
+      .string()
+      .trim()
+      .regex(
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+        'Slug must be lowercase alphanumeric with hyphens (e.g. terms-of-service)',
+      )
+      .optional(),
+    content: z
+      .string({ required_error: 'Content is required' })
+      .min(1, 'Content cannot be empty'),
+    isPublished: z.boolean().optional().default(true),
   }),
 });
 
 const updateLegalPage = z.object({
   params: z.object({
-    legalId: objectIdValidator,
+    id: z.string().uuid({ message: 'Invalid ID format' }),
   }),
   body: z.object({
     title: z.string().trim().min(1).max(200).optional(),
-    content: z.string().max(100000, 'Content cannot exceed 100,000 characters').optional(),
+    slug: z
+      .string()
+      .trim()
+      .regex(
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+        'Slug must be lowercase alphanumeric with hyphens (e.g. terms-of-service)',
+      )
+      .optional(),
+    content: z.string().min(1).optional(),
+    isPublished: z.boolean().optional(),
+  }),
+});
+
+const getLegalPage = z.object({
+  params: z.object({
+    identifier: z.string().min(1, 'Identifier is required'),
   }),
 });
 
 const deleteLegalPage = z.object({
   params: z.object({
-    legalId: objectIdValidator,
+    id: z.string().uuid({ message: 'Invalid ID format' }),
   }),
 });
 
@@ -39,6 +59,3 @@ export const LegalValidation = {
   updateLegalPage,
   deleteLegalPage,
 };
-
-
-

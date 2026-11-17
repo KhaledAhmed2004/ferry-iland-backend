@@ -5,7 +5,6 @@ const phoneRegex = /^\+?[0-9]{7,15}$/;
 const passwordRegex =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-={}\[\]|;:'",.<>/?]).{8,}$/;
 
-// Register Schema
 const registerUserZodSchema = z.object({
   body: z
     .object({
@@ -29,8 +28,6 @@ const registerUserZodSchema = z.object({
           USER_ROLES.USER,
           USER_ROLES.OPERATOR,
           USER_ROLES.ADMIN,
-          USER_ROLES.PROMOTER,
-          USER_ROLES.BUSINESS_OWNER,
         ])
         .optional()
         .default(USER_ROLES.USER),
@@ -42,17 +39,8 @@ const registerUserZodSchema = z.object({
     .passthrough()
     .superRefine((data, ctx) => {
       const isOperator = data.role === USER_ROLES.OPERATOR;
-      const isBusinessOwner = data.role === USER_ROLES.BUSINESS_OWNER;
 
-      if (isBusinessOwner) {
-        if (!data.businessName) {
-          ctx.addIssue({
-            code: 'custom',
-            message: 'businessName is required for registration validation',
-            path: ['businessName'],
-          });
-        }
-      } else if (isOperator) {
+      if (isOperator) {
         if (!data.companyName && !data.businessName) {
           ctx.addIssue({
             code: 'custom',
@@ -87,7 +75,6 @@ const registerUserZodSchema = z.object({
     }),
 });
 
-// Verify OTP / Email Schema
 const verifyOtpSchema = z.object({
   body: z
     .object({
@@ -111,7 +98,6 @@ const verifyOtpSchema = z.object({
     }),
 });
 
-// Resend OTP Schema
 const resendOtpSchema = z.object({
   body: z
     .object({
@@ -123,7 +109,6 @@ const resendOtpSchema = z.object({
     .passthrough(),
 });
 
-// Login Schema
 const loginSchema = z.object({
   body: z
     .object({
@@ -139,7 +124,6 @@ const loginSchema = z.object({
     .passthrough(),
 });
 
-// Refresh Token Schema
 const refreshTokenSchema = z.object({
   body: z
     .object({
@@ -149,7 +133,6 @@ const refreshTokenSchema = z.object({
     .optional(),
 });
 
-// Forgot Password Schema
 const forgetPasswordSchema = z.object({
   body: z
     .object({
@@ -161,7 +144,6 @@ const forgetPasswordSchema = z.object({
     .passthrough(),
 });
 
-// Reset Password Schema
 const resetPasswordSchema = z.object({
   body: z
     .object({
@@ -174,80 +156,6 @@ const resetPasswordSchema = z.object({
       newPassword: z
         .string({ error: 'Password is required' })
         .min(8, 'Password must be at least 8 characters long'),
-      confirmPassword: z.string().optional(),
-    })
-    .passthrough(),
-});
-
-// Change Password Schema
-const changePasswordSchema = z.object({
-  body: z
-    .object({
-      currentPassword: z.string().optional(),
-      oldPassword: z.string().optional(),
-      newPassword: z
-        .string({ error: 'New Password is required' })
-        .min(8, 'Password must be at least 8 characters long'),
-      confirmPassword: z.string().optional(),
-    })
-    .passthrough()
-    .superRefine((data, ctx) => {
-      if (!data.currentPassword && !data.oldPassword) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Current password is required',
-          path: ['oldPassword'],
-        });
-      }
-    }),
-});
-
-const createChangePasswordZodSchema = z.object({
-  body: z
-    .object({
-      currentPassword: z.string().optional(),
-      oldPassword: z.string().optional(),
-      newPassword: z
-        .string({ error: 'New Password is required' })
-        .min(8, 'Password must be at least 8 characters long'),
-      confirmPassword: z.string({
-        error: 'Confirm Password is required',
-      }),
-    })
-    .passthrough()
-    .superRefine((data, ctx) => {
-      if (!data.currentPassword && !data.oldPassword) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Current password is required',
-          path: ['oldPassword'],
-        });
-      }
-      if (data.confirmPassword && data.newPassword !== data.confirmPassword) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Passwords do not match',
-          path: ['confirmPassword'],
-        });
-      }
-    }),
-});
-
-// Claim Admin Schema
-const claimAdminZodSchema = z.object({
-  body: z
-    .object({
-      email: z
-        .string({ error: 'Email is required' })
-        .email('Invalid email address')
-        .transform(val => val.toLowerCase().trim()),
-      currentPassword: z.string({
-        error: 'Current password is required',
-      }),
-      newPassword: z
-        .string({ error: 'New password is required' })
-        .min(8, 'Password must be at least 8 characters long')
-        .max(128, 'Password cannot exceed 128 characters'),
       confirmPassword: z.string().optional(),
     })
     .passthrough(),
@@ -266,21 +174,8 @@ export const AuthValidation = {
   forgetPasswordSchema,
   forgotPasswordSchema: forgetPasswordSchema,
   resetPasswordSchema,
-  changePasswordSchema,
-  createChangePasswordZodSchema,
-  claimAdminZodSchema,
-
-  // Backward-compatibility aliases
-  createRegisterZodSchema: registerUserZodSchema,
-  createVerifyEmailZodSchema: verifyOtpSchema,
-  createLoginZodSchema: loginSchema,
-  createRefreshTokenZodSchema: refreshTokenSchema,
-  createForgetPasswordZodSchema: forgetPasswordSchema,
-  createResetPasswordZodSchema: resetPasswordSchema,
-  changePasswordZodSchema: changePasswordSchema,
 };
 
-// Inferred Types
 export type IRegisterUserReq = z.infer<typeof registerUserZodSchema>['body'];
 export type IVerifyOtpReq = z.infer<typeof verifyOtpSchema>['body'];
 export type IResendOtpReq = z.infer<typeof resendOtpSchema>['body'];
@@ -290,5 +185,3 @@ export type IRefreshTokenReq = NonNullable<
 >['body'];
 export type IForgetPasswordReq = z.infer<typeof forgetPasswordSchema>['body'];
 export type IResetPasswordReq = z.infer<typeof resetPasswordSchema>['body'];
-export type IChangePasswordReq = z.infer<typeof changePasswordSchema>['body'];
-export type IClaimAdminReq = z.infer<typeof claimAdminZodSchema>['body'];

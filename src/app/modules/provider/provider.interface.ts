@@ -23,7 +23,6 @@ export const PROVIDER_SORT_FIELDS = [
   'contactPersonName',
   'status',
   'ferriesCount',
-  'routesCount',
 ] as const;
 
 export type ProviderSortField = (typeof PROVIDER_SORT_FIELDS)[number];

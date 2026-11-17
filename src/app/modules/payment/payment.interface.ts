@@ -81,4 +81,6 @@ export type IWebhookHandlerResult = {
   error?: string;
   /** Refunds created in the transaction, sent to Stripe after it commits. */
   refundIds: string[];
+  /** Feature 7: a refund this event moved to SUCCEEDED, emailed after the commit. */
+  succeededRefundId?: string;
 };

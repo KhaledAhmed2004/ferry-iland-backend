@@ -13,8 +13,8 @@ async function runVerification() {
 
   // 1. Search Trips
   console.log('▶ TEST 1: Live Trip Search from PostgreSQL DB');
-  // Search day is the departure port's local today (Philipsburg, spec 0003), not the UTC day.
-  const targetDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lower_Princes' }).format(new Date());
+  // Search day is today (UTC).
+  const targetDate = new Date().toISOString().slice(0, 10);
   const searchUrl = `${baseUrl}/trips/search?from=Philipsburg, Sint Maarten&to=Fort Bay Harbor, Saba&departureDate=${targetDate}&adults=2`;
   const searchRes = await fetch(searchUrl);
   const searchData = await searchRes.json();

@@ -14,6 +14,8 @@ import { PortRoutes } from '../app/modules/port/port.route';
 import { FerryRoutes } from '../app/modules/ferry/ferry.route';
 import { ScheduleRoutes } from '../app/modules/schedule/schedule.route';
 import { BookingRoutes } from '../app/modules/booking/booking.route';
+import { BookingRequestRoutes } from '../app/modules/bookingRequest/bookingRequest.route';
+import { RefundRetryRoutes } from '../app/modules/bookingRequest/refundRetry.route';
 import { TicketRoutes } from '../app/modules/ticket/ticket.route';
 import { OffDayRoutes } from '../app/modules/offDay/offDay.route';
 import { ProviderRoutes } from '../app/modules/provider/provider.route';
@@ -46,6 +48,10 @@ const apiRoutes = [
   },
   {
     path: '/legals',
+    route: LegalRoutes,
+  },
+  {
+    path: '/legal',
     route: LegalRoutes,
   },
   {
@@ -91,6 +97,14 @@ const apiRoutes = [
   {
     path: '/manage-booking',
     route: BookingRoutes,
+  },
+  {
+    path: '/booking-requests',
+    route: BookingRequestRoutes,
+  },
+  {
+    path: '/refunds',
+    route: RefundRetryRoutes,
   },
   {
     path: '/tickets',

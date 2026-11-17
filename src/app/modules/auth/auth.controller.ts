@@ -6,12 +6,10 @@ import sendResponse from '../../../shared/sendResponse';
 import { AuthService } from './auth.service';
 import { IAuthUser } from './auth.interface';
 import {
-  IChangePasswordReq,
   IRegisterUserReq,
   ILoginReq,
   IResetPasswordReq,
   IVerifyOtpReq,
-  IClaimAdminReq,
 } from './auth.validation';
 
 const authCookieOptions = {
@@ -21,12 +19,8 @@ const authCookieOptions = {
   path: '/',
 };
 
-/**
- * The refresh token is random, so a browser also needs the session id to refresh with
- * cookies alone. Both are httpOnly.
- */
 const setAuthCookies = (res: Response, refreshToken: string, sessionId: string) => {
-  const options = { ...authCookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 }; // 30 days
+  const options = { ...authCookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 };
   res.cookie('refreshToken', refreshToken, options);
   res.cookie('sessionId', sessionId, options);
 };
@@ -68,18 +62,17 @@ const resendVerification = catchAsync(async (req: Request, res: Response) => {
     success: true,
     statusCode: StatusCodes.OK,
     message: result.message,
-    data: null,
+    data: result.data || null,
   });
 });
 
 const loginUser = catchAsync(async (req: Request, res: Response) => {
   const loginData = req.body as ILoginReq;
-  const ip = req.ip || req.socket.remoteAddress;
-  const deviceInfo = (req.headers['user-agent'] as string) || 'Unknown Device';
+  const clientIp = req.ip || req.socket.remoteAddress;
+  const userAgent = (req.headers['user-agent'] as string) || 'Unknown Device';
 
-  const result = await AuthService.loginUser(loginData, ip, deviceInfo);
+  const result = await AuthService.loginUser(loginData, clientIp, userAgent);
 
-  // Set refresh token + session id in httpOnly cookies
   if (result?.tokens?.refreshToken) {
     setAuthCookies(res, result.tokens.refreshToken, result.sessionId);
   }
@@ -108,17 +101,16 @@ const refreshToken = catchAsync(async (req: Request, res: Response) => {
     (req.cookies?.sessionId as string | undefined);
 
   const token = bodyToken || cookieToken || '';
-  const ip = req.ip || req.socket.remoteAddress;
-  const deviceInfo = (req.headers['user-agent'] as string) || 'Unknown Device';
+  const clientIp = req.ip || req.socket.remoteAddress;
+  const userAgent = (req.headers['user-agent'] as string) || 'Unknown Device';
 
   const result = await AuthService.refreshToken(
     bodySessionId || token,
     token,
-    ip,
-    deviceInfo,
+    clientIp,
+    userAgent,
   );
 
-  // Rotate refresh token cookie
   if (result?.tokens?.refreshToken) {
     setAuthCookies(res, result.tokens.refreshToken, result.sessionId);
   }
@@ -137,7 +129,6 @@ const refreshToken = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Logout Single Session
 const logoutUser = catchAsync(async (req: Request, res: Response) => {
   const { deviceToken, sessionId } = req.body;
   const user = req.user as IAuthUser;
@@ -153,35 +144,6 @@ const logoutUser = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Logout All Sessions
-const logoutAll = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-
-  await AuthService.logoutAll(user.id);
-
-  clearAuthCookies(res);
-
-  sendResponse(res, {
-    success: true,
-    statusCode: StatusCodes.OK,
-    message: 'Logged out from all devices.',
-  });
-});
-
-// Get Current User Status
-const getMyStatus = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-  const result = await AuthService.getMyStatus(user.id);
-
-  sendResponse(res, {
-    success: true,
-    statusCode: StatusCodes.OK,
-    message: 'Account status retrieved.',
-    data: result,
-  });
-});
-
-// Forgot Password
 const forgotPassword = catchAsync(async (req: Request, res: Response) => {
   const email = req.body.email;
   const result = await AuthService.forgotPassword(email);
@@ -194,7 +156,6 @@ const forgotPassword = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Reset Password
 const resetPassword = catchAsync(async (req: Request, res: Response) => {
   const rawToken = req.headers.authorization || '';
   const resetData = req.body as IResetPasswordReq;
@@ -208,35 +169,6 @@ const resetPassword = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-// Change Password
-const changePassword = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-  const passwordData = req.body as IChangePasswordReq;
-  const result = await AuthService.changePassword(user, passwordData);
-
-  clearAuthCookies(res);
-
-  sendResponse(res, {
-    success: true,
-    statusCode: StatusCodes.OK,
-    message: result.message,
-  });
-});
-
-// Claim Admin
-const claimAdmin = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as any;
-  const claimData = req.body as IClaimAdminReq;
-  const result = await AuthService.claimAdmin(user, claimData);
-
-  sendResponse(res, {
-    success: true,
-    statusCode: StatusCodes.OK,
-    message: 'Admin account credentials updated successfully.',
-    data: result,
-  });
-});
-
 export const AuthController = {
   registerUser,
   verifyEmail,
@@ -244,10 +176,6 @@ export const AuthController = {
   loginUser,
   refreshToken,
   logoutUser,
-  logoutAll,
-  getMyStatus,
   forgotPassword,
   resetPassword,
-  changePassword,
-  claimAdmin,
 };

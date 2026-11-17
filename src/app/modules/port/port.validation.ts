@@ -1,11 +1,4 @@
 import { z } from 'zod';
-import { isValidTimeZone } from '../../../shared/portTime';
-
-// IANA zone name; trip times at this port are shown and read in it (spec 0003).
-const timeZoneSchema = z
-  .string({ error: 'Time zone is required' })
-  .trim()
-  .refine(isValidTimeZone, 'Invalid time zone');
 
 const createPortZodSchema = z.object({
   body: z.object({
@@ -14,7 +7,6 @@ const createPortZodSchema = z.object({
       .trim()
       .min(2, 'Port name must be at least 2 characters')
       .max(100, 'Port name cannot exceed 100 characters'),
-    timeZone: timeZoneSchema,
     isActive: z.boolean().optional().default(true),
   }),
 });
@@ -27,7 +19,6 @@ const updatePortZodSchema = z.object({
       .min(2, 'Port name must be at least 2 characters')
       .max(100, 'Port name cannot exceed 100 characters')
       .optional(),
-    timeZone: timeZoneSchema.optional(),
     isActive: z.boolean().optional(),
   }),
 });

@@ -1,8 +1,10 @@
-import { AccountStatus, BookingStatus, PaymentStatus, Role, TripStatus } from '@prisma/client';
+import { AccountStatus, BookingStatus, PaymentProvider, PaymentStatus, Role, TripStatus } from '@prisma/client';
 import request from 'supertest';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import app from '../../../../app';
+import { logger } from '../../../../shared/logger';
 import {
+  addReturnLeg,
   bookingPayload,
   createBookableTrip,
   createUser,
@@ -178,8 +180,176 @@ describe('PATCH /api/v1/bookings/:id/cancel', () => {
       [1, 2].map(() => api().patch(`/api/v1/bookings/${booking.id}/cancel`).send({ email })),
     );
 
-    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    // The loser either sees the cancelled booking (400) or loses the claim (409, spec 0004 AC-13).
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses[0]).toBe(200);
+    expect([400, 409]).toContain(statuses[1]);
     expect(await seatsLeft(schedule.id)).toBe(10);
+  });
+
+  describe('spec 0004: 24h rule and refunds', () => {
+    const HOUR = 60 * 60 * 1000;
+
+    async function bookPaid(departInHours: number) {
+      const trip = await bookGuest(10, 2);
+      await prisma.schedule.update({
+        where: { id: trip.schedule.id },
+        data: {
+          departureTime: new Date(Date.now() + departInHours * HOUR),
+          arrivalTime: new Date(Date.now() + departInHours * HOUR + 45 * 60 * 1000),
+        },
+      });
+      const payment = await prisma.payment.update({
+        where: { bookingId: trip.booking.id },
+        data: {
+          provider: PaymentProvider.STRIPE,
+          status: PaymentStatus.COMPLETED,
+          stripePaymentIntentId: `pi_test_${trip.booking.id}`,
+          paidAt: new Date(),
+        },
+      });
+      return { ...trip, payment };
+    }
+
+    it('GET shows SELF_CANCEL with the full refund 24h or more ahead (AC-4)', async () => {
+      const { booking, email, payment } = await bookPaid(48);
+
+      const res = await api().get(`/api/v1/bookings/${booking.reference}`).query({ email });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.cancellation).toMatchObject({
+        mode: 'SELF_CANCEL',
+        refundCents: payment.amountCents,
+        automaticRefund: true,
+        pendingRequest: null,
+      });
+      expect(res.body.data).not.toHaveProperty('requests');
+    });
+
+    it('200: a paid booking cancelled 24h or more ahead gets a full CUSTOMER_CANCEL refund (AC-1)', async () => {
+      const { schedule, booking, email, payment } = await bookPaid(48);
+
+      const res = await api().patch(`/api/v1/bookings/${booking.id}/cancel`).send({ email });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.refund).toMatchObject({ amountCents: payment.amountCents });
+      const refunds = await prisma.refund.findMany({ where: { paymentId: payment.id } });
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]).toMatchObject({ reason: 'CUSTOMER_CANCEL', amountCents: payment.amountCents });
+      expect(await seatsLeft(schedule.id)).toBe(10);
+    });
+
+    it('a round trip self cancel frees seats on both legs with one full refund (AC-1)', async () => {
+      const trip = await createBookableTrip({ seats: 10 });
+      const { returnSchedule } = await addReturnLeg(trip, { returnInHours: 80 });
+      const payload = {
+        ...bookingPayload(trip.schedule.id, { adults: 2 }),
+        tripType: 'ROUND_TRIP',
+        returnScheduleId: returnSchedule.id,
+      };
+      const created = await api().post('/api/v1/bookings').send(payload);
+      expect(created.status).toBe(201);
+      expect([await seatsLeft(trip.schedule.id), await seatsLeft(returnSchedule.id)]).toEqual([8, 8]);
+      const payment = await prisma.payment.update({
+        where: { bookingId: created.body.data.id },
+        data: {
+          provider: PaymentProvider.STRIPE,
+          status: PaymentStatus.COMPLETED,
+          stripePaymentIntentId: `pi_test_${created.body.data.id}`,
+          paidAt: new Date(),
+        },
+      });
+
+      const res = await api()
+        .patch(`/api/v1/bookings/${created.body.data.id}/cancel`)
+        .send({ email: payload.leadPassengerEmail });
+
+      expect(res.status).toBe(200);
+      expect([await seatsLeft(trip.schedule.id), await seatsLeft(returnSchedule.id)]).toEqual([10, 10]);
+      const refunds = await prisma.refund.findMany({ where: { paymentId: payment.id } });
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]).toMatchObject({ reason: 'CUSTOMER_CANCEL', amountCents: payment.amountCents });
+    });
+
+    it('a manual payment cancels with no refund row and a warning naming the booking (AC-3)', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      const { schedule, booking, email } = await bookGuest(10, 2);
+      await prisma.schedule.update({
+        where: { id: schedule.id },
+        data: {
+          departureTime: new Date(Date.now() + 48 * HOUR),
+          arrivalTime: new Date(Date.now() + 48 * HOUR + 45 * 60 * 1000),
+        },
+      });
+      const before = await api().get(`/api/v1/bookings/${booking.reference}`).query({ email });
+      expect(before.body.data.cancellation).toMatchObject({
+        mode: 'SELF_CANCEL',
+        refundCents: 0,
+        automaticRefund: false,
+      });
+
+      const res = await api().patch(`/api/v1/bookings/${booking.id}/cancel`).send({ email });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.refund).toBeNull();
+      expect(await prisma.refund.count()).toBe(0);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Booking ${booking.reference} cancelled with a MANUAL payment`));
+      warn.mockRestore();
+    });
+
+    it('409 REQUEST_REQUIRED inside 24h; nothing changes (AC-2)', async () => {
+      const { schedule, booking, email, payment } = await bookPaid(5);
+
+      const res = await api().patch(`/api/v1/bookings/${booking.id}/cancel`).send({ email });
+
+      expect(res.status).toBe(409);
+      expect(res.body.data.code).toBe('REQUEST_REQUIRED');
+      expect(await seatsLeft(schedule.id)).toBe(8);
+      expect(await prisma.refund.count({ where: { paymentId: payment.id } })).toBe(0);
+      const get = await api().get(`/api/v1/bookings/${booking.reference}`).query({ email });
+      expect(get.body.data.cancellation.mode).toBe('REQUEST');
+    });
+
+    it('admin cancels inside 24h with an ADMIN refund (AC-20)', async () => {
+      const { booking, payment } = await bookPaid(2);
+      const admin = await createUser(Role.ADMIN);
+
+      const res = await api()
+        .patch(`/api/v1/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${await tokenFor(admin)}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      const refund = await prisma.refund.findFirstOrThrow({ where: { paymentId: payment.id } });
+      expect(refund).toMatchObject({ reason: 'ADMIN', amountCents: payment.amountCents });
+    });
+
+    it('409 BOARDED for a checked in booking (AC-8)', async () => {
+      const { booking } = await bookPaid(48);
+      await prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.CHECKED_IN } });
+      const admin = await createUser(Role.ADMIN);
+
+      const res = await api()
+        .patch(`/api/v1/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${await tokenFor(admin)}`)
+        .send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.data.code).toBe('BOARDED');
+    });
+
+    it('the DB allows only one live cancel refund per payment', async () => {
+      const { payment } = await bookPaid(48);
+      await prisma.refund.create({
+        data: { paymentId: payment.id, amountCents: 100, reason: 'CUSTOMER_CANCEL', status: 'PENDING' },
+      });
+
+      await expect(
+        prisma.refund.create({
+          data: { paymentId: payment.id, amountCents: 100, reason: 'ADMIN', status: 'PENDING' },
+        }),
+      ).rejects.toMatchObject({ code: 'P2002' });
+    });
   });
 
   it('404: guest with wrong or missing email cannot cancel (booking not revealed)', async () => {

@@ -112,8 +112,7 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
             },
           },
         ] as any)
-        // Today's departures at each port's own today (spec 0003, rule 16): the one leaving
-        // now is kept, the one 30 hours away is another local day and is dropped.
+        // Today's departures (UTC day): the one leaving now is kept, the one 30 hours away is dropped.
         .mockImplementationOnce((async () => [
           {
             id: 'sched-1',
@@ -125,8 +124,8 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
             availableSeats: 30,
             route: {
               id: 'route-1',
-              departurePort: { name: 'Port A', code: 'PTA', timeZone: 'America/Anguilla' },
-              destinationPort: { name: 'Port B', code: 'PTB', timeZone: 'America/Anguilla' },
+              departurePort: { name: 'Port A', code: 'PTA' },
+              destinationPort: { name: 'Port B', code: 'PTB' },
             },
             ferry: { id: 'f-1', name: 'Nautilus', capacity: 100 },
             bookings: [{ tickets: [{ id: 't-1' }, { id: 't-2' }, { id: 't-3' }] }],
@@ -141,8 +140,8 @@ describe('DashboardService Ferry Analytics Unit Tests', () => {
             availableSeats: 90,
             route: {
               id: 'route-1',
-              departurePort: { name: 'Port A', code: 'PTA', timeZone: 'America/Anguilla' },
-              destinationPort: { name: 'Port B', code: 'PTB', timeZone: 'America/Anguilla' },
+              departurePort: { name: 'Port A', code: 'PTA' },
+              destinationPort: { name: 'Port B', code: 'PTB' },
             },
             ferry: { id: 'f-1', name: 'Nautilus', capacity: 100 },
             bookings: [],

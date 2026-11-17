@@ -1,4 +1,4 @@
-import { BoardingStatus, CabinClass, TripStatus } from '@prisma/client';
+import { BoardingStatus, BookingStatus, CabinClass, TripStatus } from '@prisma/client';
 
 export interface IBoardPassengerPayload {
   boarded?: boolean;
@@ -16,6 +16,13 @@ export interface IManifestPassengerRecord {
   luggageCount: number;
   boardingStatus: BoardingStatus;
   boardedAt: Date | null;
+  /** What the manifest's "Move to another trip" action needs (spec 0004, AC-18). */
+  booking: {
+    status: BookingStatus;
+    leadPassengerName: string;
+    passengers: number;
+    hasReturn: boolean;
+  };
 }
 
 export interface ITripManifestResponse {
@@ -27,8 +34,6 @@ export interface ITripManifestResponse {
     destinationPort: string;
     departureTime: Date;
     arrivalTime: Date;
-    departureTimeZone: string;
-    arrivalTimeZone: string;
     tripStatus: TripStatus;
     totalPassengers: number;
     boardedPassengers: number;

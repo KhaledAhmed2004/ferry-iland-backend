@@ -2,6 +2,7 @@ import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
 import { AccountStatus, RouteStatus, TripStatus } from '@prisma/client';
+import { USER_ROLES } from '../../../enums/user';
 import {
   ICreateRouteReq,
   IListRoutesQuery,
@@ -9,49 +10,18 @@ import {
   IUpdateRouteReq,
 } from './route.validation';
 
-const getOperatorProfile = async (userId: string) => {
-  const operator = await prisma.operatorProfile.findUnique({
-    where: { userId },
-  });
-  if (!operator) {
-    throw new ApiError(
-      StatusCodes.FORBIDDEN,
-      'Operator profile not found for this user',
-    );
-  }
-  return operator;
-};
+const PORT_SELECT = {
+  select: { id: true, name: true },
+} as const;
 
-type IBundleFares = {
-  adultRoundTripFare?: number | null;
-  childRoundTripFare?: number | null;
-  adultSameDayFare?: number | null;
-  childSameDayFare?: number | null;
-};
-
-/** Only the bundle fares the request sent; null clears one (option not offered). */
-const pickBundleFares = (dto: IBundleFares): IBundleFares => {
-  const fares: IBundleFares = {};
-  for (const key of [
-    'adultRoundTripFare',
-    'childRoundTripFare',
-    'adultSameDayFare',
-    'childSameDayFare',
-  ] as const) {
-    if (dto[key] !== undefined) fares[key] = dto[key];
-  }
-  return fares;
-};
-
-const createRoute = async (userId: string, dto: ICreateRouteReq) => {
+/** Admin: create a platform route. Any operator can then schedule trips on it. */
+const createRoute = async (dto: ICreateRouteReq) => {
   if (dto.departurePortId === dto.destinationPortId) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       'Departure port and destination port cannot be the same',
     );
   }
-
-  const operator = await getOperatorProfile(userId);
 
   const [departurePort, destinationPort] = await Promise.all([
     prisma.port.findUnique({ where: { id: dto.departurePortId } }),
@@ -74,8 +44,7 @@ const createRoute = async (userId: string, dto: ICreateRouteReq) => {
 
   const existing = await prisma.route.findUnique({
     where: {
-      operatorId_departurePortId_destinationPortId: {
-        operatorId: operator.id,
+      departurePortId_destinationPortId: {
         departurePortId: dto.departurePortId,
         destinationPortId: dto.destinationPortId,
       },
@@ -85,54 +54,44 @@ const createRoute = async (userId: string, dto: ICreateRouteReq) => {
   if (existing) {
     throw new ApiError(
       StatusCodes.CONFLICT,
-      'You already have an active route configured between these ports',
+      `A route from ${departurePort.name} to ${destinationPort.name} already exists`,
     );
   }
 
   return prisma.route.create({
     data: {
-      operatorId: operator.id,
       departurePortId: dto.departurePortId,
       destinationPortId: dto.destinationPortId,
       durationMinutes: dto.durationMinutes,
       ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
-      ...pickBundleFares(dto),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.amenities !== undefined && { amenities: dto.amenities }),
-        ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+      description: dto.description,
+      ...(dto.amenities !== undefined && { amenities: dto.amenities }),
+      imageUrl: dto.imageUrl,
       isBorderCrossing: dto.isBorderCrossing ?? false,
       status: dto.status ?? RouteStatus.ACTIVE,
     },
     include: {
-      departurePort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
-      destinationPort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
+      departurePort: PORT_SELECT,
+      destinationPort: PORT_SELECT,
     },
   });
 };
 
-const listOperatorRoutes = async (userId: string, query: IListRoutesQuery) => {
-  const operator = await getOperatorProfile(userId);
-
+/**
+ * Admins see every route. Operators only need routes they can schedule on, so they
+ * get active routes only, whatever status they ask for.
+ */
+const listRoutes = async (role: string, query: IListRoutesQuery) => {
+  const isAdmin = role === USER_ROLES.ADMIN;
   const page = Number(query.page ?? 1) || 1;
   const limit = Number(query.limit ?? 10) || 10;
   const skip = (page - 1) * limit;
 
-  const where = {
-    operatorId: operator.id,
-    ...(query.status ? { status: query.status } : {}),
-  };
+  const where = isAdmin
+    ? query.status
+      ? { status: query.status }
+      : {}
+    : { status: RouteStatus.ACTIVE };
 
   const [totalItems, routes] = await Promise.all([
     prisma.route.count({ where }),
@@ -142,20 +101,10 @@ const listOperatorRoutes = async (userId: string, query: IListRoutesQuery) => {
       take: limit,
       orderBy: { createdAt: 'desc' },
       include: {
-        departurePort: {
-          select: {
-            id: true,
-            name: true,
-            timeZone: true,
-          },
-        },
-        destinationPort: {
-          select: {
-            id: true,
-            name: true,
-            timeZone: true,
-          },
-        },
+        departurePort: PORT_SELECT,
+        destinationPort: PORT_SELECT,
+        // How many trips are on this route; admins see it in the routes table.
+        _count: { select: { schedules: true } },
       },
     }),
   ]);
@@ -173,52 +122,8 @@ const listOperatorRoutes = async (userId: string, query: IListRoutesQuery) => {
   };
 };
 
-const getRouteById = async (userId: string, id: string) => {
-  const operator = await getOperatorProfile(userId);
-
-  const route = await prisma.route.findFirst({
-    where: {
-      id,
-      operatorId: operator.id,
-    },
-    include: {
-      departurePort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
-      destinationPort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
-    },
-  });
-
-  if (!route) {
-    throw new ApiError(StatusCodes.NOT_FOUND, `Route not found with ID: ${id}`);
-  }
-
-  return route;
-};
-
-const updateRoute = async (
-  userId: string,
-  id: string,
-  dto: IUpdateRouteReq,
-) => {
-  const operator = await getOperatorProfile(userId);
-
-  const existing = await prisma.route.findFirst({
-    where: {
-      id,
-      operatorId: operator.id,
-    },
-  });
+const updateRoute = async (id: string, dto: IUpdateRouteReq) => {
+  const existing = await prisma.route.findUnique({ where: { id } });
 
   if (!existing) {
     throw new ApiError(StatusCodes.NOT_FOUND, `Route not found with ID: ${id}`);
@@ -228,7 +133,6 @@ const updateRoute = async (
     where: { id },
     data: {
       ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
-      ...pickBundleFares(dto),
       ...(dto.description !== undefined && { description: dto.description }),
       ...(dto.amenities !== undefined && { amenities: dto.amenities }),
       ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
@@ -243,35 +147,18 @@ const updateRoute = async (
       }),
     },
     include: {
-      departurePort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
-      destinationPort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
+      departurePort: PORT_SELECT,
+      destinationPort: PORT_SELECT,
     },
   });
 };
 
-const deleteRoute = async (userId: string, id: string) => {
-  const operator = await getOperatorProfile(userId);
-
-  const existing = await prisma.route.findFirst({
-    where: {
-      id,
-      operatorId: operator.id,
-    },
+const deleteRoute = async (id: string) => {
+  const existing = await prisma.route.findUnique({
+    where: { id },
     include: {
-      departurePort: { select: { name: true, timeZone: true } },
-      destinationPort: { select: { name: true, timeZone: true } },
+      departurePort: { select: { name: true } },
+      destinationPort: { select: { name: true } },
       schedules: {
         where: {
           bookings: {
@@ -306,7 +193,7 @@ const deleteRoute = async (userId: string, id: string) => {
   } catch (error: any) {
     if (
       error?.code === 'P2003' ||
-      error?.code === '23001' ||
+      error?.code === '23503' ||
       error?.message?.includes('violates RESTRICT') ||
       error?.message?.includes('foreign key constraint')
     ) {
@@ -324,17 +211,10 @@ const deleteRoute = async (userId: string, id: string) => {
   };
 };
 
-const bulkUpdateRouteStatus = async (
-  userId: string,
-  ids: string[],
-  status: RouteStatus,
-) => {
-  const operator = await getOperatorProfile(userId);
-
+const bulkUpdateRouteStatus = async (ids: string[], status: RouteStatus) => {
   const result = await prisma.route.updateMany({
     where: {
       id: { in: ids },
-      operatorId: operator.id,
     },
     data: { status },
   });
@@ -345,14 +225,11 @@ const bulkUpdateRouteStatus = async (
   };
 };
 
-const bulkDeleteRoutes = async (userId: string, ids: string[]) => {
-  const operator = await getOperatorProfile(userId);
-
+const bulkDeleteRoutes = async (ids: string[]) => {
   // Check which routes have schedules with existing bookings
   const routesWithBookings = await prisma.route.findMany({
     where: {
       id: { in: ids },
-      operatorId: operator.id,
       schedules: {
         some: {
           bookings: {
@@ -363,8 +240,8 @@ const bulkDeleteRoutes = async (userId: string, ids: string[]) => {
     },
     select: {
       id: true,
-      departurePort: { select: { name: true, timeZone: true } },
-      destinationPort: { select: { name: true, timeZone: true } },
+      departurePort: { select: { name: true } },
+      destinationPort: { select: { name: true } },
     },
   });
 
@@ -389,7 +266,6 @@ const bulkDeleteRoutes = async (userId: string, ids: string[]) => {
     const result = await prisma.route.deleteMany({
       where: {
         id: { in: deletableIds },
-        operatorId: operator.id,
       },
     });
 
@@ -418,7 +294,7 @@ const bulkDeleteRoutes = async (userId: string, ids: string[]) => {
   } catch (error: any) {
     if (
       error?.code === 'P2003' ||
-      error?.code === '23001' ||
+      error?.code === '23503' ||
       error?.message?.includes('violates RESTRICT') ||
       error?.message?.includes('foreign key constraint')
     ) {
@@ -439,20 +315,8 @@ const getPublicConnectedPorts = async () => {
       destinationPort: { isActive: true },
     },
     select: {
-      departurePort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
-      destinationPort: {
-        select: {
-          id: true,
-          name: true,
-          timeZone: true,
-        },
-      },
+      departurePort: PORT_SELECT,
+      destinationPort: PORT_SELECT,
     },
   });
 
@@ -461,13 +325,11 @@ const getPublicConnectedPorts = async () => {
     {
       portId: string;
       portName: string;
-      timeZone: string;
       destinations: Map<
         string,
         {
           portId: string;
           portName: string;
-          timeZone: string;
         }
       >;
     }
@@ -481,7 +343,6 @@ const getPublicConnectedPorts = async () => {
       portMap.set(dep.id, {
         portId: dep.id,
         portName: dep.name,
-        timeZone: dep.timeZone,
         destinations: new Map(),
       });
     }
@@ -491,7 +352,6 @@ const getPublicConnectedPorts = async () => {
       depEntry.destinations.set(dest.id, {
         portId: dest.id,
         portName: dest.name,
-        timeZone: dest.timeZone,
       });
     }
   }
@@ -499,7 +359,6 @@ const getPublicConnectedPorts = async () => {
   return Array.from(portMap.values()).map(p => ({
     portId: p.portId,
     portName: p.portName,
-    timeZone: p.timeZone,
     destinations: Array.from(p.destinations.values()),
   }));
 };
@@ -513,32 +372,21 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
       status: RouteStatus.ACTIVE,
       departurePort: { isActive: true },
       destinationPort: { isActive: true },
-      operator: {
-        user: {
-          status: AccountStatus.ACTIVE,
-        },
-      },
     },
     include: {
-      departurePort: true,
-      destinationPort: true,
-      operator: {
-        select: {
-          id: true,
-          companyName: true,
-          contactEmail: true,
-        },
-      },
-      // Only bookable, future departures count towards price and trip totals.
+      departurePort: PORT_SELECT,
+      destinationPort: PORT_SELECT,
+      // Only bookable, future departures by active operators count towards price and trip totals.
       schedules: {
         where: {
           status: { in: [TripStatus.ON_TIME, TripStatus.BOARDING, TripStatus.PREPARING] },
           departureTime: { gte: now },
+          ferry: { operator: { user: { status: AccountStatus.ACTIVE } } },
         },
         select: {
           id: true,
+          ferry: { select: { operator: { select: { companyName: true } } } },
           adultFare: true,
-          childFare: true,
           availableSeats: true,
           departureTime: true,
           _count: {
@@ -595,16 +443,16 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
       highlights: Array.isArray(route.amenities) ? route.amenities : [],
       description: route.description || null,
       imageUrl: route.imageUrl || null,
-      operatorName: route.operator.companyName,
+      // Operators with upcoming trips on this shared route; null when none.
+      operatorName:
+        [...new Set(route.schedules.map(s => s.ferry.operator.companyName))].join(', ') || null,
       departurePort: {
         id: route.departurePort.id,
         name: route.departurePort.name,
-        timeZone: route.departurePort.timeZone,
       },
       destinationPort: {
         id: route.destinationPort.id,
         name: route.destinationPort.name,
-        timeZone: route.destinationPort.timeZone,
       },
     };
   });
@@ -619,8 +467,7 @@ const getPopularRoutes = async (query?: IPopularRoutesQuery) => {
 
 export const RouteService = {
   createRoute,
-  listOperatorRoutes,
-  getRouteById,
+  listRoutes,
   updateRoute,
   deleteRoute,
   bulkUpdateRouteStatus,

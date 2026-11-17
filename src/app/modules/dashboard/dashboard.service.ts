@@ -11,7 +11,6 @@ import {
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
-import { localDate, portToday } from '../../../shared/portTime';
 import { PrismaAnalyticsBuilder } from '../../builder';
 import {
   IAdminAnalyticsOverview,
@@ -410,12 +409,10 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
       departurePort: {
         name: s.route.departurePort.name,
         code: s.route.departurePort.code,
-        timeZone: s.route.departurePort.timeZone,
       },
       destinationPort: {
         name: s.route.destinationPort.name,
         code: s.route.destinationPort.code,
-        timeZone: s.route.destinationPort.timeZone,
       },
     },
     ferry: {
@@ -440,8 +437,6 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
       ? `${b.schedule.route.departurePort?.name || ''} → ${b.schedule.route.destinationPort?.name || ''}`
       : 'Route',
     departureTime: b.schedule?.departureTime || b.createdAt || new Date(),
-    // Departure port zone for dock local display (spec 0003); null when the booking has no trip.
-    departureTimeZone: b.schedule?.route?.departurePort?.timeZone ?? null,
     pax:
       Array.isArray(b.tickets) && b.tickets.length > 0
         ? b.tickets.length
@@ -487,24 +482,22 @@ const getOperatorOverview = async (userId: string): Promise<IOperatorOverview> =
         'yesterday',
       ),
     },
-    todayDepartures: (await findTodayDeparturesAtPorts(operator.id, now)).map(mapScheduleToQueueItem),
+    todayDepartures: (await findTodayDepartures(operator.id, now)).map(mapScheduleToQueueItem),
     upcomingTrips: upcomingSchedules.map(mapScheduleToQueueItem),
     recentBookings: recentBookings.slice(0, 5).map(mapBookingToRecentItem),
   };
 };
 
-/**
- * Today's departures by each departure port's own today, not the UTC day (spec 0003, rule 16).
- * A UTC window padded by 14 hours covers every zone; each trip then keeps only if its local
- * date at its departure port is that port's today. The other overview counters stay on UTC.
- */
-const findTodayDeparturesAtPorts = async (operatorId: string, now: Date) => {
-  const padMs = 14 * 60 * 60 * 1000;
-  const dayMs = 24 * 60 * 60 * 1000;
+/** Today's departures (the UTC day of `now`), soonest first, at most five. */
+const findTodayDepartures = async (operatorId: string, now: Date) => {
+  const today = now.toISOString().slice(0, 10);
   const candidates = await prisma.schedule.findMany({
     where: {
       ferry: { operatorId },
-      departureTime: { gte: new Date(now.getTime() - dayMs - padMs), lte: new Date(now.getTime() + dayMs + padMs) },
+      departureTime: {
+        gte: new Date(`${today}T00:00:00.000Z`),
+        lte: new Date(`${today}T23:59:59.999Z`),
+      },
     },
     include: {
       route: { include: { departurePort: true, destinationPort: true } },
@@ -518,10 +511,7 @@ const findTodayDeparturesAtPorts = async (operatorId: string, now: Date) => {
   });
 
   return candidates
-    .filter(s => {
-      const zone = s.route.departurePort.timeZone;
-      return localDate(s.departureTime, zone) === portToday(zone, now);
-    })
+    .filter(s => s.departureTime.toISOString().slice(0, 10) === today)
     .slice(0, 5);
 };
 

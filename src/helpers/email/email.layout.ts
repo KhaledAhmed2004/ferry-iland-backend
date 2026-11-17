@@ -5,11 +5,11 @@ export type IEmailLayoutProps = {
 }
 
 /**
- * Bulletproof, modern, responsive HTML email layout wrapper for Moeb26.
+ * Bulletproof, modern, responsive HTML email layout wrapper for IslandHop.
  * Compatible with Gmail, Apple Mail, Outlook, and mobile screens.
  */
 export const wrapInEmailLayout = ({
-  title = 'Moeb26 Notification',
+  title = 'IslandHop Notification',
   previewText = '',
   content,
 }: IEmailLayoutProps): string => {
@@ -75,7 +75,7 @@ export const wrapInEmailLayout = ({
           <tr>
             <td align="center" style="padding-bottom: 24px;">
               <div style="display: inline-block; padding: 10px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-                <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 2px; color: #F8FAFC; text-transform: uppercase;">MOEB<span style="color: #38BDF8;">26</span></h1>
+                <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 1px; color: #F8FAFC;">Island<span style="color: #38BDF8;">Hop</span></h1>
               </div>
             </td>
           </tr>
@@ -96,9 +96,9 @@ export const wrapInEmailLayout = ({
           <!-- Footer -->
           <tr>
             <td align="center" style="padding-top: 32px; color: #64748B; font-size: 13px; line-height: 20px;">
-              <p style="margin: 0 0 8px 0;">This is an automated notification from the Moeb26 Chauffeur Platform.</p>
+              <p style="margin: 0 0 8px 0;">This is an automated message from IslandHop, the island ferry booking platform.</p>
               <p style="margin: 0 0 8px 0;">If you did not request this email, you can safely ignore it.</p>
-              <p style="margin: 0; color: #475569;">&copy; ${currentYear} Moeb26 Inc. All rights reserved.</p>
+              <p style="margin: 0; color: #475569;">&copy; ${currentYear} IslandHop. All rights reserved.</p>
             </td>
           </tr>
         </table>

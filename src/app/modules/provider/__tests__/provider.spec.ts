@@ -18,6 +18,9 @@ vi.mock('../../../../shared/prisma', () => ({
     user: {
       update: vi.fn(),
     },
+    route: {
+      findMany: vi.fn(),
+    },
     schedule: {
       findMany: vi.fn(),
       updateMany: vi.fn(),
@@ -55,14 +58,17 @@ describe('ProviderService Unit Tests', () => {
       name: 'Captain James',
       status: AccountStatus.ACTIVE,
     },
+    // Operators no longer own routes, so there is no _count.routes on the profile.
     _count: {
       ferries: 4,
-      routes: 2,
     },
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: providers run no trips, so they run no routes.
+    vi.mocked(prisma.schedule.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.route.findMany).mockResolvedValue([]);
   });
 
   describe('listProviders', () => {
@@ -71,6 +77,13 @@ describe('ProviderService Unit Tests', () => {
       vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([
         mockProvider as any,
       ]);
+      // Distinct (route, ferry) pairs: route-1 is run by two of its ferries, so it counts once.
+      vi.mocked(prisma.schedule.findMany).mockResolvedValue([
+        { routeId: 'route-1', ferry: { operatorId: 'provider-uuid-1' } },
+        { routeId: 'route-1', ferry: { operatorId: 'provider-uuid-1' } },
+        { routeId: 'route-2', ferry: { operatorId: 'provider-uuid-1' } },
+        { routeId: 'route-3', ferry: { operatorId: 'another-provider' } },
+      ] as any);
 
       const result = await ProviderService.listProviders({ page: 1, limit: 10 });
 
@@ -84,6 +97,22 @@ describe('ProviderService Unit Tests', () => {
       expect(result.data[0].companyName).toBe('Island Ferry Co.');
       expect(result.data[0].ferriesCount).toBe(4);
       expect(result.data[0].routesCount).toBe(2);
+      expect(prisma.schedule.findMany).toHaveBeenCalledWith({
+        where: { ferry: { operatorId: { in: ['provider-uuid-1'] } } },
+        distinct: ['routeId', 'ferryId'],
+        select: { routeId: true, ferry: { select: { operatorId: true } } },
+      });
+    });
+
+    it('reports 0 routes for a provider that runs no trips', async () => {
+      vi.mocked(prisma.operatorProfile.count).mockResolvedValue(1);
+      vi.mocked(prisma.operatorProfile.findMany).mockResolvedValue([
+        mockProvider as any,
+      ]);
+
+      const result = await ProviderService.listProviders({ page: 1, limit: 10 });
+
+      expect(result.data[0].routesCount).toBe(0);
     });
 
     it('filters providers by searchTerm and account status', async () => {
@@ -115,13 +144,23 @@ describe('ProviderService Unit Tests', () => {
       vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue({
         ...mockProvider,
         ferries: [{ id: 'ferry-1', name: 'Ocean Voyager' }],
-        routes: [{ id: 'route-1', durationMinutes: 60 }],
       } as any);
+      // Routes are shared: the provider's routes are the ones its ferries run trips on.
+      vi.mocked(prisma.route.findMany).mockResolvedValue([
+        { id: 'route-1', durationMinutes: 60 },
+      ] as any);
 
       const result = await ProviderService.getProviderById('provider-uuid-1');
 
       expect(result.id).toBe('provider-uuid-1');
       expect(result.companyName).toBe('Island Ferry Co.');
+      expect(result.routes).toEqual([{ id: 'route-1', durationMinutes: 60 }]);
+      expect(result._count).toMatchObject({ ferries: 4, routes: 1 });
+      expect(prisma.route.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { schedules: { some: { ferry: { operatorId: 'provider-uuid-1' } } } },
+        }),
+      );
     });
 
     it('throws 404 when provider is not found', async () => {

@@ -18,7 +18,7 @@ export const accountApprovedTemplate = (data: IAccountApprovedEmailData): ISendE
     <div style="background-color: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 20px; margin: 24px 0; text-align: left;">
       <h4 style="margin: 0 0 8px 0; color: #34D399; font-size: 15px;">Next Steps:</h4>
       <ul style="margin: 0; padding-left: 20px; color: #CBD5E1; font-size: 14px; line-height: 22px;">
-        <li>Log in to the Moeb26 Mobile Application</li>
+        <li>Log in to the IslandHop website</li>
         <li>Review your active service area and vehicle details</li>
         <li>Go online and start accepting high-end client trips</li>
       </ul>
@@ -37,10 +37,10 @@ export const accountApprovedTemplate = (data: IAccountApprovedEmailData): ISendE
 
   return {
     to: data.email,
-    subject: 'Account Approved - Welcome to Moeb26 Chauffeur Fleet',
+    subject: 'Account Approved - Welcome to IslandHop',
     html: wrapInEmailLayout({
       title: 'Account Approved',
-      previewText: 'Your Moeb26 Chauffeur account is now approved and active.',
+      previewText: 'Your IslandHop account is now approved and active.',
       content,
     }),
   };

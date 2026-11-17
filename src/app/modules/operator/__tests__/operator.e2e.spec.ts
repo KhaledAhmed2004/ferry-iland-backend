@@ -64,10 +64,15 @@ vi.mock('../../../../shared/prisma', () => {
     },
     booking: {
       findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    bookingRequest: {
+      updateMany: vi.fn(),
     },
     ticket: {
       findUnique: vi.fn(),
@@ -236,8 +241,8 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         availableSeats: 30,
         route: {
           id: 'route-1',
-          departurePort: { name: 'Malé', code: 'MLE', timeZone: 'America/Anguilla' },
-          destinationPort: { name: 'Hulhumalé', code: 'HUL', timeZone: 'America/Anguilla' },
+          departurePort: { name: 'Malé', code: 'MLE' },
+          destinationPort: { name: 'Hulhumalé', code: 'HUL' },
         },
         ferry: {
           id: 'ferry-1',
@@ -254,7 +259,7 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
       vi.mocked(prisma.schedule.findMany)
         .mockResolvedValueOnce([mockTodaySchedule] as any)
         .mockResolvedValueOnce([mockTodaySchedule] as any)
-        // Today's departures at each port's own today (spec 0003, rule 16).
+        // Today's departures.
         .mockResolvedValueOnce([mockTodaySchedule] as any);
 
       vi.mocked(prisma.booking.findMany)
@@ -444,7 +449,6 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         status: TripStatus.ON_TIME,
         route: {
           id: 'route-1',
-          operatorId: mockOperatorProfile.id,
           departurePort: { name: 'Malé Terminal', code: 'MLE' },
           destinationPort: { name: 'Maafushi Pier', code: 'MFU' },
         },
@@ -452,6 +456,8 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
           id: 'ferry-1',
           name: 'Sea Breeze Catamaran',
           capacity: 60,
+          // The trip belongs to the ferry's operator (routes are shared).
+          operatorId: mockOperatorProfile.id,
         },
       };
 
@@ -539,7 +545,7 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
           status: BookingStatus.CONFIRMED,
           schedule: {
             status: TripStatus.ON_TIME,
-            route: {
+            ferry: {
               operatorId: mockOperatorProfile.id,
             },
           },
@@ -585,7 +591,7 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
           status: BookingStatus.CONFIRMED,
           schedule: {
             status: TripStatus.ON_TIME,
-            route: {
+            ferry: {
               operatorId: mockOperatorProfile.id,
             },
           },
@@ -680,7 +686,7 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         id: 'bk-001',
         status: BookingStatus.CONFIRMED,
         schedule: {
-          route: {
+          ferry: {
             operatorId: mockOperatorProfile.id,
           },
         },
@@ -690,7 +696,11 @@ describe('Operator Module E2E Test Suite (Overview, Settings, Manifest & Booking
         mockBooking as any,
       );
       vi.mocked(prisma.ticket.updateMany).mockResolvedValue({ count: 1 });
-      vi.mocked(prisma.booking.update).mockResolvedValue({
+      // Spec 0004: check in claims the booking by compare and swap, closes a pending request,
+      // then reads the booking back.
+      vi.mocked(prisma.booking.updateMany).mockResolvedValue({ count: 1 });
+      vi.mocked(prisma.bookingRequest.updateMany).mockResolvedValue({ count: 0 });
+      vi.mocked(prisma.booking.findUniqueOrThrow).mockResolvedValue({
         ...mockBooking,
         status: BookingStatus.CHECKED_IN,
         tickets: [{ id: 'tck-1', boardingStatus: BoardingStatus.CHECKED_IN }],

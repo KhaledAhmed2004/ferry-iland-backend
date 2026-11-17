@@ -8,7 +8,7 @@ export const welcome: INotificationTemplate = {
   name: 'welcome',
 
   push: {
-    title: 'Welcome to Moeb26!',
+    title: 'Welcome to IslandHop!',
     body: 'Thank you for joining. Get started by completing your profile.',
     data: {
       type: 'WELCOME',
@@ -20,14 +20,14 @@ export const welcome: INotificationTemplate = {
     event: 'NOTIFICATION',
     data: {
       type: 'WELCOME',
-      message: 'Welcome to Moeb26! We are excited to have you on board.',
+      message: 'Welcome to IslandHop! We are excited to have you on board.',
     },
   },
 
   database: {
     type: 'SYSTEM',
-    title: 'Welcome to Moeb26!',
-    text: 'Thank you for joining Moeb26. Get started by completing your profile.',
+    title: 'Welcome to IslandHop!',
+    text: 'Thank you for joining IslandHop. Get started by completing your profile.',
   },
 };
 

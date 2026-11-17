@@ -1,5 +1,3 @@
-import { UserController } from '../user/user.controller';
-import { UserValidation } from '../user/user.validation';
 import express from 'express';
 import { USER_ROLES } from '../../../enums/user';
 import auth from '../../middlewares/auth';
@@ -32,11 +30,33 @@ router.get(
   BookingController.getBookingByReference,
 );
 
+// Spec 0006: Payments, Refunds, and Operator payouts tabs (read only, ADMIN only).
 router.get(
   '/payments',
   auth(USER_ROLES.ADMIN),
   validateRequest(AdminValidation.listPaymentsQueryZodSchema),
   AdminController.getAdminPayments,
+);
+
+router.get(
+  '/payments/refunds',
+  auth(USER_ROLES.ADMIN),
+  validateRequest(AdminValidation.listRefundsQueryZodSchema),
+  AdminController.getAdminRefunds,
+);
+
+router.get(
+  '/payments/payouts',
+  auth(USER_ROLES.ADMIN),
+  validateRequest(AdminValidation.listPayoutsQueryZodSchema),
+  AdminController.getAdminPayouts,
+);
+
+router.get(
+  '/payments/payouts/:operatorId/bookings',
+  auth(USER_ROLES.ADMIN),
+  validateRequest(AdminValidation.payoutBookingsZodSchema),
+  AdminController.getAdminPayoutBookings,
 );
 
 router.get(
@@ -50,20 +70,6 @@ router.patch(
   auth(USER_ROLES.ADMIN),
   validateRequest(AdminValidation.updateCommissionZodSchema),
   AdminController.updateCommissionSettings,
-);
-
-router.patch(
-  '/settings/platform',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(AdminValidation.updatePlatformZodSchema),
-  AdminController.updatePlatformInfo,
-);
-
-router.patch(
-  '/users/:userId',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(UserValidation.updateProfileZodSchema),
-  UserController.updateUserById,
 );
 
 router.use('/providers', ProviderRoutes);

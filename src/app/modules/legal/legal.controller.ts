@@ -3,6 +3,7 @@ import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../../shared/catchAsync';
 import sendResponse from '../../../shared/sendResponse';
 import { LegalService } from './legal.service';
+import { USER_ROLES } from '../../../enums/user';
 
 const createLegalPage = catchAsync(async (req: Request, res: Response) => {
   const result = await LegalService.createLegalPage(req.body);
@@ -10,59 +11,66 @@ const createLegalPage = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     success: true,
     statusCode: StatusCodes.CREATED,
-    message: 'Legal page created successfully',
+    message: 'Legal document created successfully',
     data: result,
   });
 });
 
 const getAll = catchAsync(async (req: Request, res: Response) => {
-  const result = await LegalService.getAll();
+  const user = req.user as { role?: string } | undefined;
+  const isAdmin = user?.role === USER_ROLES.ADMIN;
+  const result = await LegalService.getAll(isAdmin);
 
   sendResponse(res, {
     success: true,
     statusCode: StatusCodes.OK,
-    message: 'Legal pages retrieved successfully',
+    message: 'Legal documents retrieved successfully',
     data: result,
   });
 });
 
-const getById = catchAsync(async (req: Request, res: Response) => {
-  const result = await LegalService.getById(req.params.legalId);
+const getByIdOrSlug = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as { role?: string } | undefined;
+  const isAdmin = user?.role === USER_ROLES.ADMIN;
+  const identifier = req.params.identifier || req.params.legalId || req.params.id;
+  const result = await LegalService.getByIdOrSlug(identifier, isAdmin);
 
   sendResponse(res, {
     success: true,
     statusCode: StatusCodes.OK,
-    message: 'Legal page retrieved successfully',
+    message: 'Legal document retrieved successfully',
     data: result,
   });
 });
 
 const updateById = catchAsync(async (req: Request, res: Response) => {
-  const result = await LegalService.updateById(req.params.legalId, req.body);
+  const id = req.params.id || req.params.legalId;
+  const result = await LegalService.updateById(id, req.body);
 
   sendResponse(res, {
     success: true,
     statusCode: StatusCodes.OK,
-    message: 'Legal page updated successfully',
+    message: 'Legal document updated successfully',
     data: result,
   });
 });
 
 const deleteById = catchAsync(async (req: Request, res: Response) => {
-  await LegalService.deleteById(req.params.legalId);
+  const id = req.params.id || req.params.legalId;
+  await LegalService.deleteById(id);
 
   sendResponse(res, {
     success: true,
     statusCode: StatusCodes.OK,
-    message: 'Legal page deleted successfully',
+    message: 'Legal document deleted successfully',
+    data: null,
   });
 });
 
 export const LegalController = {
   createLegalPage,
   getAll,
-  getById,
+  getByIdOrSlug,
   updateById,
   deleteById,
 };
-

@@ -1,28 +1,28 @@
 import { StatusCodes } from 'http-status-codes';
-import { Route, Schedule, TripType, Port } from '@prisma/client';
+import { Ferry, Route, Schedule, TripType } from '@prisma/client';
 import ApiError from '../../../errors/ApiError';
-import { localDate } from '../../../shared/portTime';
 
 /**
  * Trip type pricing and return leg rules (plan 2026-11-05-trip-type-round-trip-same-day).
- * One way uses the schedule fares. Round trip and same day return use the bundle fares stored
- * on the outbound route (client fare matrix); a null bundle fare means the option is not offered.
+ * One way uses the schedule fares. Round trip and same day return use the bundle fares the
+ * operator set on the outbound schedule; a null bundle fare means the option is not offered.
  */
 
 type ScheduleWithRoute = Pick<
   Schedule,
-  'id' | 'departureTime' | 'arrivalTime' | 'adultFare' | 'childFare'
+  | 'id'
+  | 'departureTime'
+  | 'arrivalTime'
+  | 'adultFare'
+  | 'childFare'
+  | 'adultRoundTripFare'
+  | 'childRoundTripFare'
+  | 'adultSameDayFare'
+  | 'childSameDayFare'
 > & {
-  route: Pick<
-    Route,
-    | 'operatorId'
-    | 'departurePortId'
-    | 'destinationPortId'
-    | 'adultRoundTripFare'
-    | 'childRoundTripFare'
-    | 'adultSameDayFare'
-    | 'childSameDayFare'
-  > & { departurePort: Pick<Port, 'timeZone'> };
+  // The trip's operator is its ferry's operator (routes are shared across operators).
+  ferry: Pick<Ferry, 'operatorId'>;
+  route: Pick<Route, 'departurePortId' | 'destinationPortId'>;
 };
 
 export type IFarePerPassenger = { adultFare: number; childFare: number };
@@ -43,19 +43,17 @@ export const getFarePerPassenger = (
     return { adultFare: outbound.adultFare, childFare: outbound.childFare };
   }
 
-  const { route } = outbound;
   const adultFare =
-    tripType === TripType.ROUND_TRIP ? route.adultRoundTripFare : route.adultSameDayFare;
+    tripType === TripType.ROUND_TRIP ? outbound.adultRoundTripFare : outbound.adultSameDayFare;
   const childFare =
-    tripType === TripType.ROUND_TRIP ? route.childRoundTripFare : route.childSameDayFare;
+    tripType === TripType.ROUND_TRIP ? outbound.childRoundTripFare : outbound.childSameDayFare;
 
   if (adultFare === null || adultFare === undefined) return null;
   return { adultFare, childFare: childFare ?? adultFare };
 };
 
-/** A leg's departure date at its own departure port (spec 0003, AC-9). */
-const legLocalDate = (leg: ScheduleWithRoute) =>
-  localDate(leg.departureTime, leg.route.departurePort.timeZone);
+/** A leg's departure calendar date (UTC, `YYYY-MM-DD`). */
+const legDate = (leg: ScheduleWithRoute) => leg.departureTime.toISOString().slice(0, 10);
 
 /** Throws 400 when the return leg does not fit the outbound leg for this trip type. */
 export const assertValidReturnLeg = (
@@ -84,7 +82,7 @@ export const assertValidReturnLeg = (
     );
   }
 
-  if (returnLeg.route.operatorId !== outbound.route.operatorId) {
+  if (returnLeg.ferry.operatorId !== outbound.ferry.operatorId) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
       'The return trip must be with the same ferry operator',
@@ -100,7 +98,7 @@ export const assertValidReturnLeg = (
 
   if (
     tripType === TripType.SAME_DAY_RETURN &&
-    legLocalDate(returnLeg) !== legLocalDate(outbound)
+    legDate(returnLeg) !== legDate(outbound)
   ) {
     throw new ApiError(
       StatusCodes.BAD_REQUEST,
@@ -117,7 +115,7 @@ export const resolveTripFare = (
   const fare = getFarePerPassenger(tripType, outbound);
   if (!fare) {
     const label = tripType === TripType.ROUND_TRIP ? 'Round trip' : 'Same day return';
-    throw new ApiError(StatusCodes.BAD_REQUEST, `${label} is not offered on this route`);
+    throw new ApiError(StatusCodes.BAD_REQUEST, `${label} is not offered on this trip`);
   }
   return fare;
 };

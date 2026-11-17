@@ -1,8 +1,9 @@
 import Stripe from 'stripe';
-import { PaymentStatus, Prisma, RefundStatus } from '@prisma/client';
+import { PaymentStatus, Prisma, RefundReason, RefundStatus } from '@prisma/client';
 import { prisma } from '../../../shared/prisma';
 import { logger } from '../../../shared/logger';
 import { stripe } from '../../../config/stripe';
+import { BookingEmails } from '../booking/booking.email';
 
 /**
  * Spec 0002: automatic refunds (amount mismatch here; late payment and payment after cancel in
@@ -22,6 +23,32 @@ export const mapStripeRefundStatus = (status: string | null | undefined): Refund
 
 export const refundIdempotencyKey = (reason: string, paymentId: string) =>
   `refund-${reason}-${paymentId}`;
+
+/** Spec 0004, AC-21: a retry gets its own key, or Stripe would replay the failed attempt. */
+export const retryRefundIdempotencyKey = (refundId: string) => `refund-retry-${refundId}`;
+
+/**
+ * The first refund of a reason on a payment keeps the original key; any later one of the same
+ * reason is a retry (an admin retry after a FAILED refund). Worked out from the rows, so the
+ * pending refund sweep resends with the same key the first attempt used.
+ */
+const idempotencyKeyFor = async (refund: {
+  id: string;
+  paymentId: string;
+  reason: RefundReason;
+  createdAt: Date;
+}): Promise<string> => {
+  const earlier = await prisma.refund.count({
+    where: {
+      paymentId: refund.paymentId,
+      reason: refund.reason,
+      createdAt: { lt: refund.createdAt },
+    },
+  });
+  return earlier === 0
+    ? refundIdempotencyKey(refund.reason, refund.paymentId)
+    : retryRefundIdempotencyKey(refund.id);
+};
 
 type RefundRef = { id: string; paymentId: string };
 
@@ -94,13 +121,14 @@ export const sendRefund = async (refundId: string): Promise<void> => {
 
   let stripeRefund: Stripe.Refund;
   try {
+    const idempotencyKey = await idempotencyKeyFor(refund);
     stripeRefund = await stripe.refunds.create(
       {
         payment_intent: payment.stripePaymentIntentId,
         amount: refund.amountCents,
         metadata: { refundId: refund.id, paymentId: payment.id, bookingId: payment.bookingId },
       },
-      { idempotencyKey: refundIdempotencyKey(refund.reason, payment.id) },
+      { idempotencyKey },
     );
   } catch (error) {
     if (error instanceof Stripe.errors.StripeError) {
@@ -121,14 +149,16 @@ export const sendRefund = async (refundId: string): Promise<void> => {
   }
 
   try {
-    await prisma.$transaction(async tx => {
+    const status = await prisma.$transaction(async tx => {
       await tx.refund.updateMany({
         where: { id: refund.id, stripeRefundId: null },
         data: { stripeRefundId: stripeRefund.id },
       });
-      await applyRefundStatus(tx, refund, stripeRefund, { bookingId: payment.bookingId });
+      return applyRefundStatus(tx, refund, stripeRefund, { bookingId: payment.bookingId });
     });
     logger.info(`Stripe refund ${stripeRefund.id} (${stripeRefund.status}) saved for ${ids}`);
+    // Feature 7: only the call that moved it to SUCCEEDED emails, after the commit.
+    if (status === RefundStatus.SUCCEEDED) void BookingEmails.sendRefundIssued(refund.id);
   } catch (error) {
     logger.error(
       `Stripe refund ${stripeRefund.id} created but not saved for ${ids}: ${(error as Error)?.message}`,

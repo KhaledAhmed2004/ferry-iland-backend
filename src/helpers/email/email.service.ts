@@ -21,26 +21,37 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/** Sends through nodemailer and lets a transport error reach the caller. */
+const sendEmailOrThrow = async (options: ISendEmailOptions): Promise<void> => {
+  if (process.env.NODE_ENV === 'test' || !config.email.host) {
+    return;
+  }
+  await transporter.sendMail({
+    from: `"IslandHop" <${config.email.from}>`,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    text: options.text,
+  });
+};
+
 export const EmailService = {
   /**
-   * Raw send email method via nodemailer transporter
+   * Raw send email method via nodemailer transporter. Never throws: a failure is only printed.
    */
   sendEmail: async (options: ISendEmailOptions): Promise<void> => {
-    if (process.env.NODE_ENV === 'test' || !config.email.host) {
-      return;
-    }
     try {
-      await transporter.sendMail({
-        from: `"Moeb26" <${config.email.from}>`,
-        to: options.to,
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-      });
+      await sendEmailOrThrow(options);
     } catch (error) {
       console.error('Failed to send email to:', options.to, error);
     }
   },
+
+  /**
+   * Same send, but a transport failure throws, so the caller can log it with its own context
+   * (booking emails, spec 0004 AC-17).
+   */
+  sendEmailOrThrow,
 
   /**
    * Send Account Verification OTP Email

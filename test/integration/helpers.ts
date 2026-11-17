@@ -64,12 +64,12 @@ export async function createBookableTrip(
     data: { userId: operatorUser.id, companyName: `Ferry Co ${id}`, contactPersonName: 'Test Contact' },
   });
   const [from, to] = await Promise.all([
-    // Every port needs its IANA zone (spec 0003); AST like the real ports.
-    prisma.port.create({ data: { name: `Port A ${id}`, timeZone: 'America/Anguilla' } }),
-    prisma.port.create({ data: { name: `Port B ${id}`, timeZone: 'America/Anguilla' } }),
+    prisma.port.create({ data: { name: `Port A ${id}` } }),
+    prisma.port.create({ data: { name: `Port B ${id}` } }),
   ]);
   const route = await prisma.route.create({
-    data: { operatorId: operator.id, departurePortId: from.id, destinationPortId: to.id, durationMinutes: 45 },
+    // Routes are platform wide; the trip's operator is the ferry's owner.
+    data: { departurePortId: from.id, destinationPortId: to.id, durationMinutes: 45 },
   });
   const ferry = await prisma.ferry.create({
     data: { operatorId: operator.id, name: `Ferry ${id}`, capacity: 100 },
@@ -108,6 +108,46 @@ export function bookingPayload(
     childrenCount: children,
     passengers,
   };
+}
+
+type BookableTrip = Awaited<ReturnType<typeof createBookableTrip>>;
+
+/**
+ * Turns a bookable trip into a round trip offer (spec 0004 tests): gives the outbound a bundle
+ * fare and adds a return on the reverse route with the same ferry, leaving `returnInHours` from
+ * now. `bundle: 'ROUND_TRIP' | 'SAME_DAY_RETURN'` picks which bundle fare the outbound offers.
+ */
+export async function addReturnLeg(
+  trip: BookableTrip,
+  { returnInHours, seats = 10, bundle = 'ROUND_TRIP' as 'ROUND_TRIP' | 'SAME_DAY_RETURN' },
+) {
+  await prisma.schedule.update({
+    where: { id: trip.schedule.id },
+    data:
+      bundle === 'ROUND_TRIP'
+        ? { adultRoundTripFare: 70, childRoundTripFare: 35 }
+        : { adultSameDayFare: 60, childSameDayFare: 30 },
+  });
+  const reverseRoute = await prisma.route.create({
+    data: {
+      departurePortId: trip.route.destinationPortId,
+      destinationPortId: trip.route.departurePortId,
+      durationMinutes: 45,
+    },
+  });
+  const departure = new Date(Date.now() + returnInHours * 60 * 60 * 1000);
+  const returnSchedule = await prisma.schedule.create({
+    data: {
+      routeId: reverseRoute.id,
+      ferryId: trip.ferry.id,
+      departureTime: departure,
+      arrivalTime: new Date(departure.getTime() + 45 * 60 * 1000),
+      adultFare: 40,
+      childFare: 20,
+      availableSeats: seats,
+    },
+  });
+  return { reverseRoute, returnSchedule };
 }
 
 export const seatsLeft = async (scheduleId: string) =>

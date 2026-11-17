@@ -17,6 +17,9 @@ vi.mock('../../../../shared/prisma', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
+    route: {
+      count: vi.fn(),
+    },
   },
 }));
 
@@ -64,8 +67,50 @@ describe('FerryService Unit Tests', () => {
           operatorId: mockOperator.id,
           ...payload,
           amenities: [],
+          dedicatedRoutes: { connect: [] },
         },
+        include: { dedicatedRoutes: expect.any(Object) },
       });
+      // No routes picked = no lookup, ferry may sail any route.
+      expect(prisma.route.count).not.toHaveBeenCalled();
+    });
+
+    it('dedicates the new ferry to the selected routes (duplicates ignored)', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.route.count).mockResolvedValue(2);
+      vi.mocked(prisma.ferry.create).mockResolvedValue({ id: 'ferry-1' } as any);
+
+      await FerryService.createFerry('user-op-1', {
+        name: 'Route Runner',
+        capacity: 80,
+        routeIds: ['route-a', 'route-b', 'route-a'],
+      });
+
+      expect(prisma.route.count).toHaveBeenCalledWith({
+        where: { id: { in: ['route-a', 'route-b'] } },
+      });
+      const args = vi.mocked(prisma.ferry.create).mock.calls[0][0] as any;
+      expect(args.data.dedicatedRoutes).toEqual({
+        connect: [{ id: 'route-a' }, { id: 'route-b' }],
+      });
+      expect(args.data).not.toHaveProperty('routeIds');
+    });
+
+    it('rejects with 400 when a selected route does not exist', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.route.count).mockResolvedValue(1);
+
+      await expect(
+        FerryService.createFerry('user-op-1', {
+          name: 'Route Runner',
+          capacity: 80,
+          routeIds: ['route-a', 'missing-route'],
+        }),
+      ).rejects.toMatchObject({
+        statusCode: StatusCodes.BAD_REQUEST,
+        message: 'One or more selected routes do not exist',
+      });
+      expect(prisma.ferry.create).not.toHaveBeenCalled();
     });
 
     it('throws 403 when user does not have an operator profile', async () => {
@@ -121,6 +166,30 @@ describe('FerryService Unit Tests', () => {
           where: {
             operatorId: 'op-1',
             status: VesselStatus.IN_SERVICE,
+          },
+        }),
+      );
+    });
+
+    it('with routeId, returns only ferries dedicated to that route or free for any route', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.ferry.findMany).mockResolvedValue([] as any);
+      vi.mocked(prisma.ferry.count).mockResolvedValue(0);
+
+      await FerryService.listOperatorFerries('user-op-1', {
+        routeId: 'route-a',
+        search: 'boat',
+      });
+
+      expect(prisma.ferry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            operatorId: 'op-1',
+            name: { contains: 'boat', mode: 'insensitive' },
+            OR: [
+              { dedicatedRoutes: { none: {} } },
+              { dedicatedRoutes: { some: { id: 'route-a' } } },
+            ],
           },
         }),
       );
@@ -237,7 +306,6 @@ describe('FerryService Unit Tests', () => {
         totalFerries: 3,
         inServiceFerries: 2,
         maintenanceFerries: 1,
-        outOfServiceFerries: 0,
         totalCapacity: 550,
       });
     });
@@ -268,19 +336,32 @@ describe('FerryService Unit Tests', () => {
       });
 
       expect(result).toEqual(updatedFerry);
+      // routeIds omitted: the ferry's dedicated routes are left as they are.
+      const args = vi.mocked(prisma.ferry.update).mock.calls[0][0] as any;
+      expect(args.data).toEqual({ name: 'New Name' });
+    });
+
+    it('replaces the dedicated routes, and [] clears them', async () => {
+      vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(mockOperator as any);
+      vi.mocked(prisma.ferry.findUnique).mockResolvedValue({ id: 'ferry-1', operatorId: 'op-1' } as any);
+      vi.mocked(prisma.ferry.update).mockResolvedValue({ id: 'ferry-1' } as any);
+      vi.mocked(prisma.route.count).mockResolvedValue(1);
+
+      await FerryService.updateFerry('user-op-1', 'ferry-1', { routeIds: ['route-b'] });
+      await FerryService.updateFerry('user-op-1', 'ferry-1', { routeIds: [] });
+
+      const calls = vi.mocked(prisma.ferry.update).mock.calls.map(c => (c[0] as any).data);
+      expect(calls[0]).toEqual({ dedicatedRoutes: { set: [{ id: 'route-b' }] } });
+      expect(calls[1]).toEqual({ dedicatedRoutes: { set: [] } });
     });
   });
 
   describe('deleteFerry', () => {
-    it('decommissions vessel to OUT_OF_SERVICE if schedules exist', async () => {
+    it('refuses to delete a vessel that has schedules (409) and changes nothing', async () => {
       const ferryWithSchedules = {
         id: 'ferry-1',
         operatorId: 'op-1',
         _count: { schedules: 5 },
-      };
-      const decommissionedFerry = {
-        id: 'ferry-1',
-        status: VesselStatus.OUT_OF_SERVICE,
       };
 
       vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(
@@ -289,18 +370,14 @@ describe('FerryService Unit Tests', () => {
       vi.mocked(prisma.ferry.findUnique).mockResolvedValue(
         ferryWithSchedules as any,
       );
-      vi.mocked(prisma.ferry.update).mockResolvedValue(
-        decommissionedFerry as any,
-      );
 
-      const result = await FerryService.deleteFerry('user-op-1', 'ferry-1');
-
-      expect(result.decommissioned).toBe(true);
-      expect(result.message).toContain('OUT_OF_SERVICE instead of deleted');
-      expect(prisma.ferry.update).toHaveBeenCalledWith({
-        where: { id: 'ferry-1' },
-        data: { status: VesselStatus.OUT_OF_SERVICE },
+      await expect(
+        FerryService.deleteFerry('user-op-1', 'ferry-1'),
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "This ferry has trips, so it can't be deleted. Set it to Maintenance instead.",
       });
+      expect(prisma.ferry.update).not.toHaveBeenCalled();
       expect(prisma.ferry.delete).not.toHaveBeenCalled();
     });
 
@@ -319,7 +396,6 @@ describe('FerryService Unit Tests', () => {
 
       const result = await FerryService.deleteFerry('user-op-1', 'ferry-1');
 
-      expect(result.decommissioned).toBe(false);
       expect(result.message).toBe('Vessel permanently deleted');
       expect(prisma.ferry.delete).toHaveBeenCalledWith({
         where: { id: 'ferry-1' },

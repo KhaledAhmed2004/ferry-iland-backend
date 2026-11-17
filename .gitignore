@@ -12,4 +12,8 @@ reports/
 dist/
 
 # Snaplet auto-generated seed client
-.snaplet/
+.snaplet/
+
+# Local Agent config
+.agents/
+

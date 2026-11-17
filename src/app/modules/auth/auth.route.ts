@@ -8,7 +8,6 @@ import { AuthValidation } from './auth.validation';
 
 const router = express.Router();
 
-// Register a new user or operator account
 router.post(
   '/register',
   rateLimitMiddleware({ windowMs: 3600000, max: 5, routeName: 'register-ip' }),
@@ -28,27 +27,66 @@ router.post(
   AuthController.registerUser,
 );
 
-// Verify email address using 6-digit OTP
 router.post(
-  '/verify-email',
-  rateLimitMiddleware({ windowMs: 60_000, max: 5, routeName: 'verify-email' }),
+  '/email/verify',
+  rateLimitMiddleware({ windowMs: 60_000, max: 5, routeName: 'verify-email-ip' }),
+  rateLimitMiddleware({
+    windowMs: 15 * 60_000,
+    max: 5,
+    routeName: 'verify-email-account',
+    keyResolver: req => req.body?.email?.toLowerCase()?.trim(),
+  }),
   validateRequest(AuthValidation.verifyOtpSchema),
   AuthController.verifyEmail,
 );
 
-// Resend verification OTP to user's email
 router.post(
-  '/verify-email/resend',
+  '/verify-email',
+  rateLimitMiddleware({ windowMs: 60_000, max: 5, routeName: 'verify-email-ip' }),
+  rateLimitMiddleware({
+    windowMs: 15 * 60_000,
+    max: 5,
+    routeName: 'verify-email-account',
+    keyResolver: req => req.body?.email?.toLowerCase()?.trim(),
+  }),
+  validateRequest(AuthValidation.verifyOtpSchema),
+  AuthController.verifyEmail,
+);
+
+router.post(
+  '/email/resend-otp',
   rateLimitMiddleware({
     windowMs: 60_000,
     max: 3,
-    routeName: 'resend-verification',
+    routeName: 'resend-verification-ip',
+  }),
+  rateLimitMiddleware({
+    windowMs: 60_000,
+    max: 1,
+    routeName: 'resend-verification-email',
+    keyResolver: req => req.body?.email?.toLowerCase()?.trim(),
   }),
   validateRequest(AuthValidation.resendOtpSchema),
   AuthController.resendVerification,
 );
 
-// User and operator authentication (login)
+router.post(
+  '/verify-email/resend',
+  rateLimitMiddleware({
+    windowMs: 60_000,
+    max: 3,
+    routeName: 'resend-verification-ip',
+  }),
+  rateLimitMiddleware({
+    windowMs: 60_000,
+    max: 1,
+    routeName: 'resend-verification-email',
+    keyResolver: req => req.body?.email?.toLowerCase()?.trim(),
+  }),
+  validateRequest(AuthValidation.resendOtpSchema),
+  AuthController.resendVerification,
+);
+
 router.post(
   '/login',
   rateLimitMiddleware({ windowMs: 60_000, max: 5, routeName: 'login' }),
@@ -56,7 +94,6 @@ router.post(
   AuthController.loginUser,
 );
 
-// Refresh access token via rotational session token
 router.post(
   '/refresh',
   rateLimitMiddleware({
@@ -68,29 +105,12 @@ router.post(
   AuthController.refreshToken,
 );
 
-// Logout from current active session
 router.post(
   '/logout',
-  auth(
-    USER_ROLES.USER,
-    USER_ROLES.OPERATOR,
-    USER_ROLES.ADMIN,
-  ),
+  auth(USER_ROLES.USER, USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   AuthController.logoutUser,
 );
 
-// Logout and revoke all active sessions across all devices
-router.post(
-  '/logout-all',
-  auth(
-    USER_ROLES.USER,
-    USER_ROLES.OPERATOR,
-    USER_ROLES.ADMIN,
-  ),
-  AuthController.logoutAll,
-);
-
-// Request password reset token via email
 router.post(
   '/forgot-password',
   rateLimitMiddleware({
@@ -102,7 +122,6 @@ router.post(
   AuthController.forgotPassword,
 );
 
-// Reset password using valid verification token
 router.post(
   '/reset-password',
   rateLimitMiddleware({
@@ -112,15 +131,6 @@ router.post(
   }),
   validateRequest(AuthValidation.resetPasswordSchema),
   AuthController.resetPassword,
-);
-
-// Claim and initialize root admin credentials (first-time onboarding)
-router.post(
-  '/claim-admin',
-  auth(USER_ROLES.ADMIN),
-  rateLimitMiddleware({ windowMs: 60_000, max: 5, routeName: 'claim-admin' }),
-  validateRequest(AuthValidation.claimAdminZodSchema),
-  AuthController.claimAdmin,
 );
 
 export const AuthRoutes = router;

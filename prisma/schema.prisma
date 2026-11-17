@@ -46,6 +46,9 @@ model User {
   messages            Message[]
   bookings            Booking[]
   requestedRefunds    Refund[]
+  bookingRequests     BookingRequest[] @relation("BookingRequestRequestedBy")
+  resolvedRequests    BookingRequest[] @relation("BookingRequestResolvedBy")
+  bookingChanges      BookingChange[]
 }
 
 model OperatorProfile {
@@ -61,7 +64,6 @@ model OperatorProfile {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  routes            Route[]
   ferries           Ferry[]
   offDays           OffDay[]
 }
@@ -120,8 +122,6 @@ enum RouteStatus {
 model Port {
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @unique
-  /// IANA zone name (e.g. America/Anguilla). Trip times are shown and read in this zone (spec 0003).
-  timeZone  String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,21 +130,16 @@ model Port {
   destinationRoutes Route[] @relation("DestinationPort")
 }
 
+/// A platform route between two ports, managed by admins. Operators run trips on it by
+/// scheduling their own ferries; the trip's operator is the ferry's operator.
 model Route {
   id                String          @id @default(uuid()) @db.Uuid
-  operatorId        String          @db.Uuid
-  operator          OperatorProfile @relation(fields: [operatorId], references: [id], onDelete: Cascade)
   departurePortId   String          @db.Uuid
   departurePort     Port            @relation("DeparturePort", fields: [departurePortId], references: [id], onDelete: Restrict)
   destinationPortId String          @db.Uuid
   destinationPort   Port            @relation("DestinationPort", fields: [destinationPortId], references: [id], onDelete: Restrict)
   durationMinutes   Int
   basePrice         Float?          @default(30)
-  /// Bundle fares per passenger from the client fare matrix. null = option not offered on this route.
-  adultRoundTripFare Float?
-  childRoundTripFare Float?
-  adultSameDayFare   Float?
-  childSameDayFare   Float?
   description       String?
   amenities         String[]        @default([])
   imageUrl          String?
@@ -154,9 +149,10 @@ model Route {
   updatedAt         DateTime        @updatedAt
 
   schedules         Schedule[]
+  /// Ferries dedicated to this route (see Ferry.dedicatedRoutes).
+  dedicatedFerries  Ferry[]         @relation("FerryDedicatedRoutes")
 
-  @@unique([operatorId, departurePortId, destinationPortId])
-  @@index([operatorId])
+  @@unique([departurePortId, destinationPortId])
   @@index([departurePortId])
   @@index([destinationPortId])
 }
@@ -244,7 +240,6 @@ enum VesselType {
 enum VesselStatus {
   IN_SERVICE
   MAINTENANCE
-  OUT_OF_SERVICE
 }
 
 enum TripStatus {
@@ -332,6 +327,8 @@ model Ferry {
 
   schedules    Schedule[]
   offDays      OffDay[]
+  /// Optional. Empty = the ferry may sail any route; otherwise its trips are limited to these routes.
+  dedicatedRoutes Route[]     @relation("FerryDedicatedRoutes")
 
   @@index([operatorId])
 }
@@ -348,6 +345,11 @@ model Schedule {
   captain        String?
   adultFare      Float       @default(0)
   childFare      Float       @default(0)
+  /// Bundle fares per passenger for a booking that starts on this trip. null = option not offered.
+  adultRoundTripFare Float?
+  childRoundTripFare Float?
+  adultSameDayFare   Float?
+  childSameDayFare   Float?
   status         TripStatus  @default(ON_TIME)
   availableSeats Int
   createdAt      DateTime    @default(now())
@@ -355,6 +357,10 @@ model Schedule {
 
   bookings       Booking[]
   returnBookings Booking[]   @relation("ReturnSchedule")
+  preferredByRequests       BookingRequest[] @relation("BookingRequestPreferred")
+  preferredReturnByRequests BookingRequest[] @relation("BookingRequestPreferredReturn")
+  changesFrom    BookingChange[] @relation("BookingChangeFrom")
+  changesTo      BookingChange[] @relation("BookingChangeTo")
 
   @@index([routeId, departureTime])
   @@index([ferryId, departureTime])
@@ -387,12 +393,82 @@ model Booking {
 
   tickets            Ticket[]
   payment            Payment?
+  requests           BookingRequest[]
+  changes            BookingChange[]
 
   @@index([userId])
   @@index([scheduleId])
   @@index([returnScheduleId])
   @@index([reference])
   @@index([status, holdExpiresAt])
+}
+
+enum BookingRequestType {
+  CANCEL
+  RESCHEDULE
+}
+
+enum BookingRequestStatus {
+  PENDING
+  CANCELLED
+  RESCHEDULED
+  REJECTED
+  WITHDRAWN
+}
+
+enum BookingLeg {
+  OUTBOUND
+  RETURN
+}
+
+/// Spec 0004: a customer's cancel or reschedule ask inside the 24h window, resolved by staff.
+/// At most one PENDING per booking (partial unique index in the migration).
+model BookingRequest {
+  id                        String               @id @default(uuid()) @db.Uuid
+  bookingId                 String               @db.Uuid
+  booking                   Booking              @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  type                      BookingRequestType
+  status                    BookingRequestStatus @default(PENDING)
+  /// null = whole booking; RETURN for a CHECKED_IN booking's return only request.
+  leg                       BookingLeg?
+  reason                    String?
+  preferredScheduleId       String?              @db.Uuid
+  preferredSchedule         Schedule?            @relation("BookingRequestPreferred", fields: [preferredScheduleId], references: [id], onDelete: SetNull)
+  preferredReturnScheduleId String?              @db.Uuid
+  preferredReturnSchedule   Schedule?            @relation("BookingRequestPreferredReturn", fields: [preferredReturnScheduleId], references: [id], onDelete: SetNull)
+  requestedByUserId         String?              @db.Uuid
+  requestedBy               User?                @relation("BookingRequestRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  resolvedByUserId          String?              @db.Uuid
+  resolvedBy                User?                @relation("BookingRequestResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  resolvedAt                DateTime?
+  staffNote                 String?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  changes                   BookingChange[]
+
+  @@index([bookingId, status])
+  @@index([status, createdAt])
+}
+
+/// Spec 0004: one row per leg moved to another trip. Never edited.
+model BookingChange {
+  id              String          @id @default(uuid()) @db.Uuid
+  bookingId       String          @db.Uuid
+  booking         Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  leg             BookingLeg
+  fromScheduleId  String          @db.Uuid
+  fromSchedule    Schedule        @relation("BookingChangeFrom", fields: [fromScheduleId], references: [id], onDelete: Restrict)
+  toScheduleId    String          @db.Uuid
+  toSchedule      Schedule        @relation("BookingChangeTo", fields: [toScheduleId], references: [id], onDelete: Restrict)
+  requestId       String?         @db.Uuid
+  request         BookingRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  changedByUserId String?         @db.Uuid
+  changedBy       User?           @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+  reason          String?
+  createdAt       DateTime        @default(now())
+
+  @@index([bookingId, createdAt])
 }
 
 model Ticket {
@@ -516,4 +592,17 @@ model Faq {
   @@index([category])
   @@index([isPublished])
   @@index([order])
+}
+
+model LegalPage {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  slug        String   @unique
+  content     String   @db.Text
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([isPublished])
 }

@@ -450,7 +450,6 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         totalFerries: 3,
         inServiceFerries: 2,
         maintenanceFerries: 1,
-        outOfServiceFerries: 0,
         totalCapacity: 550,
       });
     });
@@ -552,10 +551,10 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
   });
 
   // =========================================================================
-  // 6. DELETE /api/v1/ferries/:id (DELETE OR DECOMMISSION FERRY)
+  // 6. DELETE /api/v1/ferries/:id (DELETE FERRY)
   // =========================================================================
-  describe('6. DELETE /api/v1/ferries/:id (Decommission or Permanent Delete)', () => {
-    it('200 OK (Decommission): Sets status to OUT_OF_SERVICE when vessel has linked schedules', async () => {
+  describe('6. DELETE /api/v1/ferries/:id (Permanent Delete or Blocked)', () => {
+    it('409 Conflict: Refuses to delete a vessel that has linked schedules', async () => {
       const ferryId = 'ferry-with-schedules';
 
       vi.mocked(prisma.operatorProfile.findUnique).mockResolvedValue(
@@ -567,18 +566,13 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         name: 'Active Route Ferry',
         _count: { schedules: 6 },
       } as any);
-      vi.mocked(prisma.ferry.update).mockResolvedValue({
-        id: ferryId,
-        status: VesselStatus.OUT_OF_SERVICE,
-      } as any);
 
       const res = await request(app)
         .delete(`/api/v1/ferries/${ferryId}`)
         .set('Authorization', `Bearer ${operatorToken}`);
 
       logE2EStep({
-        scenario:
-          'Safe decommission of vessel with linked trips to OUT_OF_SERVICE',
+        scenario: 'Delete is blocked for a vessel with linked trips',
         method: 'DELETE',
         endpoint: `/api/v1/ferries/${ferryId}`,
         authRole: 'OPERATOR',
@@ -586,12 +580,13 @@ describe('Ferry Module E2E Test Suite (Core Business Flow - Happy Paths)', () =>
         responseBody: res.body,
       });
 
-      expect(res.status).toBe(StatusCodes.OK);
-      expect(res.body.success).toBe(true);
-      expect(res.body.message).toContain(
-        'linked schedules and has been set to OUT_OF_SERVICE',
+      expect(res.status).toBe(StatusCodes.CONFLICT);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe(
+        "This ferry has trips, so it can't be deleted. Set it to Maintenance instead.",
       );
-      expect(res.body.data.status).toBe('OUT_OF_SERVICE');
+      expect(prisma.ferry.update).not.toHaveBeenCalled();
+      expect(prisma.ferry.delete).not.toHaveBeenCalled();
     });
 
     it('200 OK (Permanent Delete): Permanently deletes vessel when it has 0 linked schedules', async () => {

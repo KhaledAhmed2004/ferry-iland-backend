@@ -22,6 +22,7 @@ import {
 import { emailsMatch, serializeBooking } from '../booking/booking.payment';
 import { bookingDetailInclude, isTripOpenForBooking } from '../booking/booking.service';
 import { bookingScheduleIds, bookingSeatCount, takeSeats } from '../booking/booking.seats';
+import { BookingEmails } from '../booking/booking.email';
 import {
   ApplyIntentSource,
   IApplyIntentResult,
@@ -562,6 +563,10 @@ const applyIntentResult = async (
     applyIntentResultInTx(tx, intent, source),
   );
   await sendRefunds(refundIds);
+  // Feature 7: only the call that confirmed the booking sends the receipt, after the commit.
+  if (result.outcome === 'confirmed' && result.bookingId) {
+    void BookingEmails.sendPaymentReceipt(result.bookingId);
+  }
   return result;
 };
 

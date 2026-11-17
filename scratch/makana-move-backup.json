@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T15:15:32.347Z",
+  "fromProfileId": "74a31db0-32c7-4b10-a922-a1ec84f62129",
+  "toProfileId": "6211110c-38b8-48b7-85d7-7ae570a20cf8",
+  "movedFerryIds": [],
+  "movedRouteIds": [],
+  "movedOffDayIds": [],
+  "previousToProfile": {
+    "companyName": "Makana Ferry Service",
+    "contactEmail": "khaledahmednayeem.dev@gmail.com",
+    "businessAddress": "Feni,Bangladesh"
+  },
+  "previousToPhone": "3213213"
+}

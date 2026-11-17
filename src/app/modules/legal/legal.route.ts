@@ -7,14 +7,18 @@ import { LegalValidation } from './legal.validation';
 
 const router = express.Router();
 
-router.get('/', LegalController.getAll);
+// Public: Get all legal pages (with optional auth so admin sees unpublished ones)
+router.get('/', auth({ optional: true }), LegalController.getAll);
 
+// Public: Get single legal page by slug or ID
 router.get(
-  '/:legalId',
+  '/:identifier',
+  auth({ optional: true }),
   validateRequest(LegalValidation.getLegalPage),
-  LegalController.getById,
+  LegalController.getByIdOrSlug,
 );
 
+// Admin: Create new legal page
 router.post(
   '/',
   auth(USER_ROLES.ADMIN),
@@ -22,20 +26,20 @@ router.post(
   LegalController.createLegalPage,
 );
 
+// Admin: Update legal page by ID
 router.patch(
-  '/:legalId',
+  '/:id',
   auth(USER_ROLES.ADMIN),
   validateRequest(LegalValidation.updateLegalPage),
   LegalController.updateById,
 );
 
+// Admin: Delete legal page by ID
 router.delete(
-  '/:legalId',
+  '/:id',
   auth(USER_ROLES.ADMIN),
   validateRequest(LegalValidation.deleteLegalPage),
   LegalController.deleteById,
 );
 
 export const LegalRoutes = router;
-
-

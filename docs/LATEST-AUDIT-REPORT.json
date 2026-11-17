@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-05T09:06:28.864Z",
-  "auditDurationSec": 7.7,
+  "timestamp": "2026-11-16T10:39:46.671Z",
+  "auditDurationSec": 6.5,
   "is100PercentReady": true,
   "summary": {
-    "routesCount": 142,
+    "routesCount": 135,
     "testSuitePassed": true,
-    "testFilesPassed": 30,
-    "testsPassed": 427,
+    "testFilesPassed": 22,
+    "testsPassed": 340,
     "databaseReady": true,
     "e2eFlowVerified": true
   },
@@ -19,7 +19,17 @@
       },
       {
         "method": "POST",
+        "path": "/email/verify",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
         "path": "/verify-email",
+        "file": "src/app/modules/auth/auth.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/email/resend-otp",
         "file": "src/app/modules/auth/auth.route.ts"
       },
       {
@@ -44,22 +54,12 @@
       },
       {
         "method": "POST",
-        "path": "/logout-all",
-        "file": "src/app/modules/auth/auth.route.ts"
-      },
-      {
-        "method": "POST",
         "path": "/forgot-password",
         "file": "src/app/modules/auth/auth.route.ts"
       },
       {
         "method": "POST",
         "path": "/reset-password",
-        "file": "src/app/modules/auth/auth.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/claim-admin",
         "file": "src/app/modules/auth/auth.route.ts"
       },
       {
@@ -98,9 +98,44 @@
         "file": "src/app/modules/booking/booking.route.ts"
       },
       {
+        "method": "POST",
+        "path": "/:idOrReference/requests",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:idOrReference/requests/:requestId/withdraw",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/:idOrReference/move-options",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/:idOrReference/move",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
         "method": "PATCH",
         "path": "/operator/:id/check-in",
         "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/",
+        "file": "src/app/modules/bookingRequest/bookingRequest.route.ts"
+      },
+      {
+        "method": "PATCH",
+        "path": "/:id/resolve",
+        "file": "src/app/modules/bookingRequest/bookingRequest.route.ts"
+      },
+      {
+        "method": "POST",
+        "path": "/:id/retry",
+        "file": "src/app/modules/bookingRequest/refundRetry.route.ts"
       },
       {
         "method": "GET",
@@ -234,7 +269,7 @@
       },
       {
         "method": "GET",
-        "path": "/:legalId",
+        "path": "/:identifier",
         "file": "src/app/modules/legal/legal.route.ts"
       },
       {
@@ -244,12 +279,12 @@
       },
       {
         "method": "PATCH",
-        "path": "/:legalId",
+        "path": "/:id",
         "file": "src/app/modules/legal/legal.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:legalId",
+        "path": "/:id",
         "file": "src/app/modules/legal/legal.route.ts"
       },
       {
@@ -379,11 +414,6 @@
       },
       {
         "method": "GET",
-        "path": "/ports",
-        "file": "src/app/modules/route/route.route.ts"
-      },
-      {
-        "method": "GET",
         "path": "/popular",
         "file": "src/app/modules/route/route.route.ts"
       },
@@ -408,18 +438,13 @@
         "file": "src/app/modules/route/route.route.ts"
       },
       {
-        "method": "GET",
-        "path": "/:id",
-        "file": "src/app/modules/route/route.route.ts"
-      },
-      {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:routeId",
         "file": "src/app/modules/route/route.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:routeId",
         "file": "src/app/modules/route/route.route.ts"
       },
       {
@@ -544,11 +569,6 @@
       },
       {
         "method": "GET",
-        "path": "/admin-dashboard",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "GET",
         "path": "/me",
         "file": "src/app/modules/user/user.route.ts"
       },
@@ -560,36 +580,6 @@
       {
         "method": "PATCH",
         "path": "/me/password",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/me/password",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/me/sessions",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/me/sessions/:id",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/profile",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/profile",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/delete-account",
         "file": "src/app/modules/user/user.route.ts"
       },
       {
@@ -603,11 +593,6 @@
         "file": "src/app/modules/user/user.route.ts"
       },
       {
-        "method": "PATCH",
-        "path": "/:userId",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
         "method": "GET",
         "path": "/:userId",
         "file": "src/app/modules/user/user.route.ts"
@@ -615,31 +600,6 @@
       {
         "method": "PATCH",
         "path": "/:userId/status",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:userId/suspend",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:userId/reactivate",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:userId/block",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:userId/unblock",
-        "file": "src/app/modules/user/user.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/:userId",
         "file": "src/app/modules/user/user.route.ts"
       }
     ],
@@ -708,22 +668,27 @@
       },
       {
         "method": "GET",
+        "path": "/payments/refunds",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/payments/payouts",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/payments/payouts/:operatorId/bookings",
+        "file": "src/app/modules/admin/admin.route.ts"
+      },
+      {
+        "method": "GET",
         "path": "/settings",
         "file": "src/app/modules/admin/admin.route.ts"
       },
       {
         "method": "PATCH",
         "path": "/settings/commission",
-        "file": "src/app/modules/admin/admin.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/settings/platform",
-        "file": "src/app/modules/admin/admin.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/users/:userId",
         "file": "src/app/modules/admin/admin.route.ts"
       }
     ],
@@ -732,17 +697,17 @@
   "database": {
     "connected": true,
     "ports": 6,
-    "operators": 6,
+    "operators": 1,
     "ferries": 3,
     "routes": 14,
-    "totalSchedules": 553,
-    "futureBookableSchedules": 534,
-    "bookings": 41,
-    "tickets": 65
+    "totalSchedules": 9,
+    "futureBookableSchedules": 6,
+    "bookings": 23,
+    "tickets": 30
   },
   "tests": {
     "passed": true,
-    "summary": "30 test files, 427 tests passed (100%)"
+    "summary": "22 test files, 340 tests passed (100%)"
   },
   "e2eFlow": {
     "verified": true,

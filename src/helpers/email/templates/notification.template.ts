@@ -26,7 +26,7 @@ export const notificationTemplate = (data: INotificationEmailData): ISendEmailOp
 
   return {
     to: data.email,
-    subject: `${data.title} - Moeb26`,
+    subject: `${data.title} - IslandHop`,
     html: wrapInEmailLayout({
       title: data.title,
       previewText: data.message.slice(0, 100),

@@ -25,15 +25,16 @@ const leg = (overrides: {
   arrivalTime: new Date(overrides.arrival),
   adultFare: 61.5,
   childFare: 46.5,
+  // Round trip / same day fares are set per trip by the operator.
+  adultRoundTripFare: overrides.roundTrip?.[0] ?? null,
+  childRoundTripFare: overrides.roundTrip?.[1] ?? null,
+  adultSameDayFare: overrides.sameDay?.[0] ?? null,
+  childSameDayFare: overrides.sameDay?.[1] ?? null,
+  // A trip's operator is its ferry's operator; routes are shared.
+  ferry: { operatorId: overrides.operatorId ?? 'op-1' },
   route: {
-    operatorId: overrides.operatorId ?? 'op-1',
     departurePortId: overrides.from ?? SABA,
     destinationPortId: overrides.to ?? STATIA,
-    adultRoundTripFare: overrides.roundTrip?.[0] ?? null,
-    childRoundTripFare: overrides.roundTrip?.[1] ?? null,
-    adultSameDayFare: overrides.sameDay?.[0] ?? null,
-    childSameDayFare: overrides.sameDay?.[1] ?? null,
-    departurePort: { timeZone: 'America/Kralendijk' },
   },
 });
 
@@ -60,7 +61,7 @@ describe('Trip type fares', () => {
     });
   });
 
-  it('round trip and same day return use the route bundle fares', () => {
+  it('round trip and same day return use the outbound schedule bundle fares', () => {
     expect(getFarePerPassenger(TripType.ROUND_TRIP, outbound)).toEqual({
       adultFare: 103,
       childFare: 78,
@@ -71,11 +72,11 @@ describe('Trip type fares', () => {
     });
   });
 
-  it('a route without the bundle fare does not offer it (400)', () => {
+  it('a trip without the bundle fare does not offer it (400)', () => {
     const noSameDay = leg({ ...outbound, departure: '2026-11-10T08:30:00.000Z', arrival: '2026-11-10T09:15:00.000Z', roundTrip: [103, 78] });
     expect(getFarePerPassenger(TripType.SAME_DAY_RETURN, noSameDay)).toBeNull();
     expect(() => resolveTripFare(TripType.SAME_DAY_RETURN, noSameDay)).toThrow(
-      'Same day return is not offered on this route',
+      'Same day return is not offered on this trip',
     );
   });
 });
@@ -106,8 +107,8 @@ describe('Return leg rules', () => {
     ).toThrow('opposite way');
   });
 
-  it('rejects a return with another operator', () => {
-    const otherOperator = { ...sameDayBack, route: { ...sameDayBack.route, operatorId: 'op-2' } };
+  it("rejects a return on another operator's ferry, even on the same shared route", () => {
+    const otherOperator = { ...sameDayBack, ferry: { operatorId: 'op-2' } };
     expect(() =>
       assertValidReturnLeg(TripType.ROUND_TRIP, outbound, otherOperator),
     ).toThrow('same ferry operator');
@@ -128,16 +129,16 @@ describe('Return leg rules', () => {
     expect(() => assertValidReturnLeg(TripType.ROUND_TRIP, outbound, nextDay)).not.toThrow();
   });
 
-  it('same day means the same local day at each departure port, not the UTC day (spec 0003, AC-9)', () => {
-    // 21:00 AST on 10 Nov is 01:00Z on 11 Nov: still the same local day as an 04:30 AST outbound.
-    const lateSameDay = {
+  it('same day means the same UTC calendar date', () => {
+    // 01:00Z on 11 Nov is a different date from a 10 Nov outbound.
+    const nextUtcDay = {
       ...sameDayBack,
       departureTime: new Date('2026-11-11T01:00:00.000Z'),
       arrivalTime: new Date('2026-11-11T01:45:00.000Z'),
     };
     expect(() =>
-      assertValidReturnLeg(TripType.SAME_DAY_RETURN, outbound, lateSameDay),
-    ).not.toThrow();
+      assertValidReturnLeg(TripType.SAME_DAY_RETURN, outbound, nextUtcDay),
+    ).toThrow('same day');
   });
 });
 

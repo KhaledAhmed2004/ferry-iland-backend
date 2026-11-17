@@ -1,18 +1,21 @@
 import { z } from 'zod';
 import { TripStatus } from '@prisma/client';
 
-/**
- * A schedule time: a port local wall time (`2026-11-06T08:30`, read in the route's port zone)
- * or an exact instant with `Z` or an offset. Kept as text here; the service converts it with the
- * port zone and then checks arrival after departure (spec 0003, AC-6 and rule 8).
- */
-const SCHEDULE_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:[zZ]|[+-]\d{2}:?\d{2})?$/;
+/** A schedule date time: any string `new Date` can parse (e.g. an ISO instant). */
 const scheduleTimeSchema = (field: string) =>
   z
     .string({ error: `${field} is required` })
     .trim()
-    .regex(SCHEDULE_TIME, `${field} must be a local date time (YYYY-MM-DDTHH:mm) or an ISO instant`);
+    .refine(value => !Number.isNaN(new Date(value).getTime()), `${field} must be a valid date time`);
+
+/** Round trip / same day return fare per passenger; null (or left out) = option not offered on this trip. */
+const bundleFare = z.number().min(0, 'Fare cannot be negative').nullable().optional();
+const bundleFareFields = {
+  adultRoundTripFare: bundleFare,
+  childRoundTripFare: bundleFare,
+  adultSameDayFare: bundleFare,
+  childSameDayFare: bundleFare,
+};
 
 const createScheduleZodSchema = z.object({
   body: z
@@ -31,6 +34,7 @@ const createScheduleZodSchema = z.object({
         .number({ error: 'adultFare is required' })
         .min(0, 'adultFare cannot be negative'),
       childFare: z.number().min(0, 'childFare cannot be negative').optional(),
+      ...bundleFareFields,
       availableSeats: z
         .number()
         .int()
@@ -48,6 +52,7 @@ const updateScheduleZodSchema = z.object({
       captain: z.string().trim().max(100).optional(),
       adultFare: z.number().min(0).optional(),
       childFare: z.number().min(0).optional(),
+      ...bundleFareFields,
       availableSeats: z.number().int().min(0).optional(),
     }),
 });
@@ -70,6 +75,8 @@ const listSchedulesQueryZodSchema = z.object({
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'date must follow YYYY-MM-DD')
       .optional(),
     status: z.enum(TripStatus).optional(),
+    // upcoming = not yet arrived (incl. in-progress sailings); past = already arrived.
+    timeframe: z.enum(['upcoming', 'past', 'all']).optional(),
     page: z.coerce.number().int().min(1).optional().default(1),
     limit: z.coerce.number().int().min(1).max(100).optional().default(20),
   }),

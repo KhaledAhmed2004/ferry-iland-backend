@@ -44,6 +44,10 @@ export type IInvoiceEmailData = {
   serviceType?: string;
   paymentMethod?: string;
   downloadUrl?: string;
+  /** Extra label and value lines, for example the trip and passengers on a booking receipt. */
+  rows?: { label: string; value: string }[];
+  actionUrl?: string;
+  actionText?: string;
 }
 
 export type INotificationEmailData = {

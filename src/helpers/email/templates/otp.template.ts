@@ -6,7 +6,7 @@ export const createAccountOtpTemplate = (data: ICreateAccountEmailData): ISendEm
     <h2 style="margin: 0 0 16px 0; color: #F8FAFC; font-size: 20px; font-weight: 700; text-align: center;">Verify Your Email Address</h2>
     <p style="margin: 0 0 20px 0; color: #94A3B8; font-size: 15px; line-height: 24px; text-align: center;">
       Hello <strong style="color: #F8FAFC;">${data.name}</strong>,<br>
-      Thank you for registering with Moeb26. Please use the 6-digit verification code below to verify your account:
+      Thank you for registering with IslandHop. Please use the 6-digit verification code below to verify your account:
     </p>
 
     <!-- OTP Display Box -->
@@ -30,10 +30,10 @@ export const createAccountOtpTemplate = (data: ICreateAccountEmailData): ISendEm
 
   return {
     to: data.email,
-    subject: 'Verify your account - Moeb26',
+    subject: 'Verify your account - IslandHop',
     html: wrapInEmailLayout({
       title: 'Verify your account',
-      previewText: `Your Moeb26 verification code is ${data.otp}`,
+      previewText: `Your IslandHop verification code is ${data.otp}`,
       content,
     }),
   };
@@ -67,10 +67,10 @@ export const resetPasswordOtpTemplate = (data: IResetPasswordEmailData): ISendEm
 
   return {
     to: data.email,
-    subject: 'Reset your password - Moeb26',
+    subject: 'Reset your password - IslandHop',
     html: wrapInEmailLayout({
       title: 'Reset your password',
-      previewText: `Your Moeb26 password reset code is ${data.otp}`,
+      previewText: `Your IslandHop password reset code is ${data.otp}`,
       content,
     }),
   };

@@ -1,10 +1,23 @@
-import { Model } from 'mongoose';
-
 export type ILegalPage = {
+  id: string;
   title: string;
-  content?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  slug: string;
+  content: string;
+  isPublished: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
-export type LegalPageModel = Model<ILegalPage>;
+export type ICreateLegalPagePayload = {
+  title: string;
+  slug?: string;
+  content: string;
+  isPublished?: boolean;
+};
+
+export type IUpdateLegalPagePayload = {
+  title?: string;
+  slug?: string;
+  content?: string;
+  isPublished?: boolean;
+};

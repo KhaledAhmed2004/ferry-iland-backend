@@ -31,15 +31,40 @@ const resolveOperatorProfile = async (userId: string) => {
   return operator;
 };
 
+/** Dedicated routes returned with a ferry: enough to show "From -> To". */
+const dedicatedRoutesSelect = {
+  select: {
+    id: true,
+    status: true,
+    departurePort: { select: { id: true, name: true } },
+    destinationPort: { select: { id: true, name: true } },
+  },
+} as const;
+
+/** Routes are platform-wide; a ferry may only be dedicated to routes that exist. */
+const assertRoutesExist = async (routeIds: string[]) => {
+  const unique = [...new Set(routeIds)];
+  if (unique.length === 0) return unique;
+  const found = await prisma.route.count({ where: { id: { in: unique } } });
+  if (found !== unique.length) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'One or more selected routes do not exist');
+  }
+  return unique;
+};
+
 const createFerry = async (userId: string, payload: ICreateFerryPayload) => {
   const operator = await resolveOperatorProfile(userId);
+  const { routeIds, ...data } = payload;
+  const dedicated = await assertRoutesExist(routeIds ?? []);
 
   return prisma.ferry.create({
     data: {
       operatorId: operator.id,
-      ...payload,
-      amenities: payload.amenities ?? [],
+      ...data,
+      amenities: data.amenities ?? [],
+      dedicatedRoutes: { connect: dedicated.map(id => ({ id })) },
     },
+    include: { dedicatedRoutes: dedicatedRoutesSelect },
   });
 };
 
@@ -66,8 +91,14 @@ const listOperatorFerries = async (
   }
 
   if (options.search) {
+    whereClause.name = { contains: options.search, mode: 'insensitive' };
+  }
+
+  // Ferries allowed on a route: dedicated to it, or free to sail any route.
+  if (options.routeId) {
     whereClause.OR = [
-      { name: { contains: options.search, mode: 'insensitive' } },
+      { dedicatedRoutes: { none: {} } },
+      { dedicatedRoutes: { some: { id: options.routeId } } },
     ];
   }
 
@@ -78,6 +109,7 @@ const listOperatorFerries = async (
       take: limit,
       orderBy: { createdAt: 'desc' },
       include: {
+        dedicatedRoutes: dedicatedRoutesSelect,
         _count: {
           select: {
             schedules: true,
@@ -117,6 +149,7 @@ const getFerryById = async (userId: string, ferryId: string) => {
   const ferry = await prisma.ferry.findUnique({
     where: { id: ferryId },
     include: {
+      dedicatedRoutes: dedicatedRoutesSelect,
       _count: {
         select: {
           schedules: true,
@@ -151,9 +184,17 @@ const updateFerry = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ferry vessel not found');
   }
 
+  const { routeIds, ...data } = payload;
+  // Omitted = keep the current routes; [] = clear them (ferry may sail any route).
+  const dedicated = routeIds === undefined ? undefined : await assertRoutesExist(routeIds);
+
   return prisma.ferry.update({
     where: { id: ferryId },
-    data: payload,
+    data: {
+      ...data,
+      ...(dedicated ? { dedicatedRoutes: { set: dedicated.map(id => ({ id })) } } : {}),
+    },
+    include: { dedicatedRoutes: dedicatedRoutesSelect },
   });
 };
 
@@ -175,18 +216,12 @@ const deleteFerry = async (userId: string, ferryId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Ferry vessel not found');
   }
 
+  // Trips (and their bookings/tickets) point at this ferry, so it cannot be removed.
   if (existingFerry._count.schedules > 0) {
-    const decommissionedFerry = await prisma.ferry.update({
-      where: { id: ferryId },
-      data: { status: VesselStatus.OUT_OF_SERVICE },
-    });
-
-    return {
-      decommissioned: true,
-      message:
-        'Vessel has linked schedules and has been set to OUT_OF_SERVICE instead of deleted',
-      ferry: decommissionedFerry,
-    };
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      "This ferry has trips, so it can't be deleted. Set it to Maintenance instead.",
+    );
   }
 
   await prisma.ferry.delete({
@@ -194,7 +229,6 @@ const deleteFerry = async (userId: string, ferryId: string) => {
   });
 
   return {
-    decommissioned: false,
     message: 'Vessel permanently deleted',
     ferry: null,
   };
@@ -218,16 +252,12 @@ const getFerryStats = async (userId: string) => {
   const maintenanceFerries = ferries.filter(
     f => f.status === VesselStatus.MAINTENANCE,
   ).length;
-  const outOfServiceFerries = ferries.filter(
-    f => f.status === VesselStatus.OUT_OF_SERVICE,
-  ).length;
   const totalCapacity = ferries.reduce((acc, f) => acc + (f.capacity || 0), 0);
 
   return {
     totalFerries,
     inServiceFerries,
     maintenanceFerries,
-    outOfServiceFerries,
     totalCapacity,
   };
 };

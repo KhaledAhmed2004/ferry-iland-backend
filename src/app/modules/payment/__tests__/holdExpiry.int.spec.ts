@@ -560,19 +560,26 @@ describe('customer cancel (AC-15)', () => {
     expect(await seatsLeft(schedule.id)).toBe(seatsAfterCancel);
   });
 
-  it('409 for a customer cancelling a paid booking; nothing changes', async () => {
-    const { booking, email, schedule, succeeded } = await pendingWithIntent();
+  // Spec 0004 retires the paid cancel block: 24h or more ahead the customer cancels and the full
+  // amount goes back through Stripe with the CUSTOMER_CANCEL idempotency key.
+  it('a customer cancelling a paid booking 24h or more ahead gets a full Stripe refund (spec 0004 AC-1)', async () => {
+    const { booking, email, schedule, payment, succeeded } = await pendingWithIntent();
     await PaymentService.applyIntentResult(succeeded, 'webhook');
     const seatsBefore = await seatsLeft(schedule.id);
 
     const res = await api().patch(`/api/v1/bookings/${booking.id}/cancel`).send({ email });
 
-    expect(res.status).toBe(409);
-    expect(res.body.message).toBe('Contact support to cancel a paid booking');
+    expect(res.status).toBe(200);
+    expect(res.body.data.refund).toMatchObject({ amountCents: payment.amountCents });
+    expect(createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: payment.amountCents }),
+      { idempotencyKey: `refund-CUSTOMER_CANCEL-${payment.id}` },
+    );
     const state = await stateOf(booking.id);
-    expect(state.status).toBe(BookingStatus.CONFIRMED);
-    expect(state.payment!.status).toBe(PaymentStatus.COMPLETED);
-    expect(await seatsLeft(schedule.id)).toBe(seatsBefore);
+    expect(state.status).toBe(BookingStatus.CANCELLED);
+    expect(state.payment!.refunds).toHaveLength(1);
+    expect(state.payment!.refunds[0].reason).toBe(RefundReason.CUSTOMER_CANCEL);
+    expect(await seatsLeft(schedule.id)).toBe(seatsBefore + booking.adultsCount + booking.childrenCount);
     expect(cancelIntent).not.toHaveBeenCalled();
   });
 

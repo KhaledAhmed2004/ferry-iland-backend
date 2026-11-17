@@ -1,6 +1,14 @@
 import { TripStatus, TripType } from '@prisma/client';
 
-export interface ICreateSchedulePayload {
+/** Round trip / same day return fares per passenger; null = option not offered on this trip. */
+export interface IScheduleBundleFares {
+  adultRoundTripFare?: number | null;
+  childRoundTripFare?: number | null;
+  adultSameDayFare?: number | null;
+  childSameDayFare?: number | null;
+}
+
+export interface ICreateSchedulePayload extends IScheduleBundleFares {
   routeId: string;
   ferryId: string;
   departureTime: string | Date;
@@ -12,7 +20,7 @@ export interface ICreateSchedulePayload {
   availableSeats?: number;
 }
 
-export interface IUpdateSchedulePayload {
+export interface IUpdateSchedulePayload extends IScheduleBundleFares {
   departureTime?: string | Date;
   arrivalTime?: string | Date;
   gate?: string;
@@ -31,6 +39,7 @@ export interface IScheduleFilterOptions {
   ferryId?: string;
   date?: string;
   status?: TripStatus;
+  timeframe?: 'upcoming' | 'past' | 'all';
   page?: number;
   limit?: number;
 }
@@ -67,9 +76,6 @@ export interface ISearchedTripResult {
   /** Full ISO times and operator, so the client can pair an outbound with a valid return. */
   departureAt: string;
   arrivalAt: string;
-  /** IANA zones of the departure and destination ports (spec 0003). */
-  departureTimeZone: string;
-  arrivalTimeZone: string;
   operatorId: string;
   /** Price for the searched trip type (round trip / same day bundle, or one way). */
   fareQuote: ITripFareQuote;

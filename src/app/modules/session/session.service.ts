@@ -167,18 +167,6 @@ const revokeSession = async (
   });
 };
 
-const findUserSessions = async (userId: string): Promise<Session[]> => {
-  return prisma.session.findMany({
-    where: {
-      userId,
-      revokedAt: null,
-    },
-    orderBy: {
-      lastUsedAt: 'desc',
-    },
-  });
-};
-
 const revokeAllUserSessions = async (
   userId: string,
   reason: string = RevocationReason.USER_LOGOUT_ALL,
@@ -199,6 +187,5 @@ export const SessionService = {
   createSession,
   refreshSession,
   revokeSession,
-  findUserSessions,
   revokeAllUserSessions,
 };

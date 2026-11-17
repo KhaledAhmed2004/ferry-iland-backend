@@ -21,12 +21,13 @@ const createFerryZodSchema = validateBody({
     .default(VesselType.CATAMARAN),
   status: z
     .enum(VesselStatus, {
-      error: 'Status must be IN_SERVICE, MAINTENANCE, or OUT_OF_SERVICE',
+      error: 'Status must be IN_SERVICE or MAINTENANCE',
     })
     .optional()
     .default(VesselStatus.IN_SERVICE),
   imageUrl: z.string().trim().optional(),
   amenities: z.array(z.string()).optional(),
+  routeIds: z.array(z.uuid('Each route id must be a valid id')).optional(),
 });
 
 const updateFerryZodSchema = validateBody({
@@ -49,17 +50,19 @@ const updateFerryZodSchema = validateBody({
     .optional(),
   status: z
     .enum(VesselStatus, {
-      error: 'Status must be IN_SERVICE, MAINTENANCE, or OUT_OF_SERVICE',
+      error: 'Status must be IN_SERVICE or MAINTENANCE',
     })
     .optional(),
   imageUrl: z.string().trim().optional(),
   amenities: z.array(z.string()).optional(),
+  routeIds: z.array(z.uuid('Each route id must be a valid id')).optional(),
 });
 
 const listFerriesQueryZodSchema = validateQuery({
   search: z.string().trim().optional(),
   status: z.enum(VesselStatus).optional(),
   type: z.enum(VesselType).optional(),
+  routeId: z.uuid('routeId must be a valid id').optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });

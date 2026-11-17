@@ -1,6 +1,11 @@
 import { PaymentStatus, RefundStatus } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
-import { applyRefundStatus, mapStripeRefundStatus, refundIdempotencyKey } from '../payment.refund';
+import {
+  applyRefundStatus,
+  mapStripeRefundStatus,
+  refundIdempotencyKey,
+  retryRefundIdempotencyKey,
+} from '../payment.refund';
 
 /**
  * Unit tests for the refund helpers (spec 0002, index contract "refund status mapping", AC-16,
@@ -37,6 +42,12 @@ describe('refundIdempotencyKey', () => {
   it('is refund-<reason>-<paymentId>, so one reason refunds a payment at most once', () => {
     expect(refundIdempotencyKey('ADMIN', 'abc')).toBe('refund-ADMIN-abc');
     expect(refundIdempotencyKey('LATE_PAYMENT', 'abc')).not.toBe(refundIdempotencyKey('ADMIN', 'abc'));
+  });
+
+  it('gives a retry its own key per refund row, never the key of the first attempt (spec 0004 AC-21)', () => {
+    expect(retryRefundIdempotencyKey('ref-2')).toBe('refund-retry-ref-2');
+    expect(retryRefundIdempotencyKey('ref-2')).not.toBe(retryRefundIdempotencyKey('ref-3'));
+    expect(retryRefundIdempotencyKey('ref-2')).not.toBe(refundIdempotencyKey('CUSTOMER_CANCEL', 'pay-1'));
   });
 });
 

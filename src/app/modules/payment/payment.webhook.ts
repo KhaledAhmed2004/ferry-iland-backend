@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { PaymentStatus, Prisma } from '@prisma/client';
+import { PaymentStatus, Prisma, RefundStatus } from '@prisma/client';
 import { StatusCodes } from 'http-status-codes';
 import { prisma } from '../../../shared/prisma';
 import { logger } from '../../../shared/logger';
@@ -7,6 +7,7 @@ import { isLiveStripeKey, stripeConfig } from '../../../config/stripe';
 import { IWebhookHandlerResult } from './payment.interface';
 import { applyRefundStatus, sendRefunds } from './payment.refund';
 import { applyIntentResultInTx, findPaymentForIntent } from './payment.service';
+import { BookingEmails } from '../booking/booking.email';
 
 /**
  * POST /api/v1/payments/webhook (spec 0002, child "payment confirmation webhook", AC-7 to AC-11).
@@ -119,6 +120,7 @@ const handleRefundUpdated = async (
     outcome: status ? `refund_${status.toLowerCase()}` : 'refund_unchanged',
     ...ids,
     refundIds: [],
+    ...(status === RefundStatus.SUCCEEDED ? { succeededRefundId: refund.id } : {}),
   };
 };
 
@@ -184,6 +186,11 @@ const processEvent = async (event: Stripe.Event): Promise<WebhookResponse> => {
 
     // Stripe side effects run only after the commit; sendRefund never throws.
     await sendRefunds(result.refundIds);
+    // Feature 7 emails, also after the commit and only for the event that made the change.
+    if (result.outcome === 'confirmed' && result.bookingId) {
+      void BookingEmails.sendPaymentReceipt(result.bookingId);
+    }
+    if (result.succeededRefundId) void BookingEmails.sendRefundIssued(result.succeededRefundId);
 
     const line = `Stripe webhook event ${event.id} (${event.type}) booking ${result.bookingId} payment ${result.paymentId}: ${result.outcome}`;
     if (result.error) logger.warn(`${line} (${result.error})`);

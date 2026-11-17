@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { BookingStatus, CabinClass, TripType } from '@prisma/client';
+import {
+  BookingLeg,
+  BookingRequestType,
+  BookingStatus,
+  CabinClass,
+  TripType,
+} from '@prisma/client';
 
 const passengerInputZodSchema = z.object({
   passengerName: z
@@ -115,7 +121,47 @@ const listBookingsQueryZodSchema = z.object({
   }),
 });
 
+/** Spec 0004, AC-5. Preferred trips are checked against the move rules in the service. */
+const createBookingRequestZodSchema = z.object({
+  body: z.object({
+    type: z.enum(BookingRequestType, { error: 'type must be CANCEL or RESCHEDULE' }),
+    leg: z.enum(BookingLeg, { error: 'leg must be OUTBOUND or RETURN' }).optional(),
+    reason: z.string().trim().max(500, 'Reason cannot exceed 500 characters').optional(),
+    preferredScheduleId: z.string().uuid('preferredScheduleId must be a valid UUID').optional(),
+    preferredReturnScheduleId: z
+      .string()
+      .uuid('preferredReturnScheduleId must be a valid UUID')
+      .optional(),
+    email: z.string().trim().optional(),
+  }),
+});
+
+/** Spec 0004, AC-15. */
+const moveOptionsQueryZodSchema = z.object({
+  query: z.object({
+    leg: z.enum(BookingLeg, { error: 'leg must be OUTBOUND or RETURN' }).optional().default('OUTBOUND'),
+    email: z.string().trim().optional(),
+  }),
+});
+
+/** Spec 0004, AC-11 to AC-13: a direct staff move of one or both legs. */
+const moveBookingZodSchema = z.object({
+  body: z
+    .object({
+      outboundScheduleId: z.string().uuid('outboundScheduleId must be a valid UUID').optional(),
+      returnScheduleId: z.string().uuid('returnScheduleId must be a valid UUID').optional(),
+      reason: z.string().trim().max(500, 'Reason cannot exceed 500 characters').optional(),
+    })
+    .refine(data => !!data.outboundScheduleId || !!data.returnScheduleId, {
+      message: 'Choose a new trip for at least one leg',
+      path: ['outboundScheduleId'],
+    }),
+});
+
 export const BookingValidation = {
   createBookingZodSchema,
   listBookingsQueryZodSchema,
+  createBookingRequestZodSchema,
+  moveOptionsQueryZodSchema,
+  moveBookingZodSchema,
 };

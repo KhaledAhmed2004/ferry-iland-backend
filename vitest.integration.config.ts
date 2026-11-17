@@ -4,7 +4,7 @@ import { testDatabaseUrl } from './test/integration/test-db-url';
 // `npm run test:int` — real-Postgres integration tests (*.int.spec.ts) against <db>_test.
 export default defineConfig({
   test: {
-    include: ['src/**/*.int.spec.ts'],
+    include: ['src/**/*.int.spec.ts', 'prisma/**/*.int.spec.ts'],
     globalSetup: ['./test/integration/global-setup.ts'],
     env: {
       DATABASE_URL: testDatabaseUrl(),

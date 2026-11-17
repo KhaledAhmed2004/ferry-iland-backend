@@ -1,15 +1,6 @@
 import { z } from 'zod';
 import { RouteStatus } from '@prisma/client';
 
-/** Bundle fare per passenger; null (or left out on create) = option not offered on this route. */
-const bundleFare = z.number().min(0, 'Fare cannot be negative').nullable().optional();
-const bundleFareFields = {
-  adultRoundTripFare: bundleFare,
-  childRoundTripFare: bundleFare,
-  adultSameDayFare: bundleFare,
-  childSameDayFare: bundleFare,
-};
-
 const createRouteZodSchema = z.object({
   body: z
     .object({
@@ -25,7 +16,6 @@ const createRouteZodSchema = z.object({
         .min(1, 'durationMinutes must be at least 1 minute')
         .max(1440, 'durationMinutes cannot exceed 1440 minutes (24 hours)'),
       basePrice: z.number().min(0, 'basePrice cannot be negative').optional().default(30),
-      ...bundleFareFields,
       description: z
         .string({ error: 'description is required' })
         .trim()
@@ -64,7 +54,6 @@ const updateRouteZodSchema = z.object({
       .max(1440, 'durationMinutes cannot exceed 1440 minutes (24 hours)')
       .optional(),
     basePrice: z.number().min(0).optional(),
-    ...bundleFareFields,
     description: z
       .string()
       .trim()

@@ -3,6 +3,9 @@ import { StatusCodes } from 'http-status-codes';
 import catchAsync from '../../../shared/catchAsync';
 import sendResponse from '../../../shared/sendResponse';
 import { BookingService } from './booking.service';
+import { BookingRequestCustomerService } from './booking.request';
+import { BookingMoveService } from './booking.move';
+import { BookingLeg } from '@prisma/client';
 import { IAuthUser } from '../auth/auth.interface';
 
 const requesterFrom = (req: Request) => {
@@ -111,7 +114,73 @@ const listAdminBookings = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const createBookingRequest = catchAsync(async (req: Request, res: Response) => {
+  const result = await BookingRequestCustomerService.createRequest(
+    req.params.idOrReference,
+    requesterFrom(req),
+    req.body,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.CREATED,
+    success: true,
+    message: 'Your request was sent to the operator',
+    data: result,
+  });
+});
+
+const withdrawBookingRequest = catchAsync(async (req: Request, res: Response) => {
+  const result = await BookingRequestCustomerService.withdrawRequest(
+    req.params.idOrReference,
+    req.params.requestId,
+    requesterFrom(req),
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Your request was withdrawn',
+    data: result,
+  });
+});
+
+const getMoveOptions = catchAsync(async (req: Request, res: Response) => {
+  const leg = req.query.leg === BookingLeg.RETURN ? BookingLeg.RETURN : BookingLeg.OUTBOUND;
+  const result = await BookingMoveService.listMoveOptions(
+    req.params.idOrReference,
+    leg,
+    requesterFrom(req),
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Move options retrieved successfully',
+    data: result,
+  });
+});
+
+const moveBooking = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as IAuthUser;
+  const result = await BookingMoveService.moveBooking(
+    { userId: user.id, role: user.role },
+    req.params.idOrReference,
+    req.body,
+  );
+
+  sendResponse(res, {
+    statusCode: StatusCodes.OK,
+    success: true,
+    message: 'Booking moved to the new trip',
+    data: result,
+  });
+});
+
 export const BookingController = {
+  getMoveOptions,
+  moveBooking,
+  createBookingRequest,
+  withdrawBookingRequest,
   createBooking,
   getMyBookings,
   getBookingByReference,

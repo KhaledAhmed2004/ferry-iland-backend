@@ -42,6 +42,26 @@ vi.mock('../../../../shared/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    refund: {
+      create: vi.fn(),
+    },
+    bookingRequest: {
+      updateMany: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../../payment/payment.refund', () => ({
+  sendRefunds: vi.fn(async () => undefined),
+}));
+
+// Spec 0004 emails run after commit; this unit suite does not load the mail transport.
+vi.mock('../booking.email', () => ({
+  BookingEmails: {
+    sendSelfCancelRefund: vi.fn(async () => undefined),
+    sendRequestReceived: vi.fn(async () => undefined),
+    sendRequestResolved: vi.fn(async () => undefined),
+    sendBookingMoved: vi.fn(async () => undefined),
   },
 }));
 
@@ -103,11 +123,10 @@ describe('BookingService Unit Tests', () => {
     // Comfortably in the future so the "already departed" guard never trips by accident.
     departureTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     route: {
-      operatorId: 'op-1',
       departurePort: { name: 'Malé' },
       destinationPort: { name: 'Maafushi' },
     },
-    ferry: { name: 'Ocean Speed 1' },
+    ferry: { name: 'Ocean Speed 1', operatorId: 'op-1' },
   };
 
   const primeCreateMocks = (schedule = mockSchedule) => {
@@ -321,11 +340,14 @@ describe('BookingService Unit Tests', () => {
       userId: null,
       reference: 'FRY-20261020-001A',
       leadPassengerEmail: 'test@example.com',
+      status: BookingStatus.CONFIRMED,
+      schedule: { departureTime: new Date(Date.now() + 72 * 60 * 60 * 1000) },
+      requests: [],
       payment: fullPayment,
     };
 
     it('returns a guest booking when the lead passenger email matches (case and spaces ignored)', async () => {
-      vi.mocked(prisma.booking.findUnique).mockResolvedValue(guestBooking as any);
+      vi.mocked(prisma.booking.findFirst).mockResolvedValue(guestBooking as any);
 
       const result = await BookingService.getBookingByReference('FRY-20261020-001A', {
         userId: null,
@@ -334,10 +356,13 @@ describe('BookingService Unit Tests', () => {
 
       expect(result.reference).toBe('FRY-20261020-001A');
       expect(result.payment).not.toHaveProperty('platformCommissionCents');
+      // Spec 0004 AC-4: the cancellation block, and raw requests are not leaked.
+      expect(result.cancellation).toMatchObject({ mode: 'SELF_CANCEL', refundCents: 0 });
+      expect(result).not.toHaveProperty('requests');
     });
 
     it('returns 404 for a guest booking when the email is missing or wrong', async () => {
-      vi.mocked(prisma.booking.findUnique).mockResolvedValue(guestBooking as any);
+      vi.mocked(prisma.booking.findFirst).mockResolvedValue(guestBooking as any);
 
       await expect(
         BookingService.getBookingByReference('FRY-20261020-001A', { userId: null }),
@@ -351,7 +376,7 @@ describe('BookingService Unit Tests', () => {
     });
 
     it('lets the owner read without an email', async () => {
-      vi.mocked(prisma.booking.findUnique).mockResolvedValue({
+      vi.mocked(prisma.booking.findFirst).mockResolvedValue({
         ...guestBooking,
         userId: 'user-1',
       } as any);
@@ -364,7 +389,7 @@ describe('BookingService Unit Tests', () => {
     });
 
     it('gives an admin the full payment view', async () => {
-      vi.mocked(prisma.booking.findUnique).mockResolvedValue(guestBooking as any);
+      vi.mocked(prisma.booking.findFirst).mockResolvedValue(guestBooking as any);
 
       const result = await BookingService.getBookingByReference('FRY-20261020-001A', {
         userId: 'admin-1',
@@ -409,15 +434,29 @@ describe('BookingService Unit Tests', () => {
   });
 
   describe('cancelBooking', () => {
+    const HOUR = 60 * 60 * 1000;
+    const now = new Date('2026-11-10T12:00:00.000Z');
+    const departingIn = (hours: number) => ({
+      departureTime: new Date(now.getTime() + hours * HOUR),
+    });
     const ownedBooking = {
       id: 'book-1',
+      reference: 'FRY-1',
       userId: 'user-1',
       scheduleId: 'sch-1',
+      returnScheduleId: null,
       leadPassengerEmail: 'owner@example.com',
       adultsCount: 2,
       childrenCount: 1,
       status: BookingStatus.CONFIRMED,
-      payment: { id: 'pay-1', status: PaymentStatus.PENDING },
+      schedule: departingIn(48),
+      payment: { id: 'pay-1', status: PaymentStatus.PENDING, refunds: [] },
+    };
+    const paidStripe = {
+      ...fullPayment,
+      provider: PaymentProvider.STRIPE,
+      status: PaymentStatus.COMPLETED,
+      refunds: [],
     };
 
     const primeCancel = (booking: any, updatedCount = 1) => {
@@ -425,30 +464,39 @@ describe('BookingService Unit Tests', () => {
       vi.mocked(prisma.booking.updateMany).mockResolvedValue({ count: updatedCount } as any);
       vi.mocked(prisma.schedule.update).mockResolvedValue({} as any);
       vi.mocked(prisma.payment.update).mockResolvedValue({} as any);
+      vi.mocked(prisma.bookingRequest.updateMany).mockResolvedValue({ count: 0 } as any);
+      vi.mocked(prisma.refund.create).mockResolvedValue({ id: 'ref-1' } as any);
       vi.mocked(prisma.booking.findUniqueOrThrow).mockResolvedValue({
         ...booking,
         status: BookingStatus.CANCELLED,
         cancelledAt: new Date(),
         tickets: [],
-        payment: { ...fullPayment, status: PaymentStatus.CANCELED },
+        payment: {
+          ...fullPayment,
+          status: PaymentStatus.CANCELED,
+          refunds: [{ id: 'ref-1', amountCents: 6500, status: 'PENDING' }],
+        },
       } as any);
     };
 
-    it('cancels booking, restores seats once, and cancels the unpaid payment', async () => {
+    it('cancels booking, claims it by compare and swap, restores seats, cancels the unpaid payment', async () => {
       primeCancel(ownedBooking);
 
-      const result = await BookingService.cancelBooking('book-1', {
-        userId: 'user-1',
-        role: 'USER',
-      });
+      const result = await BookingService.cancelBooking(
+        'book-1',
+        { userId: 'user-1', role: 'USER' },
+        now,
+      );
 
       expect(result.status).toBe(BookingStatus.CANCELLED);
       expect(prisma.booking.updateMany).toHaveBeenCalledWith({
         where: {
           id: 'book-1',
-          status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+          status: BookingStatus.CONFIRMED,
+          scheduleId: 'sch-1',
+          returnScheduleId: null,
         },
-        data: { status: BookingStatus.CANCELLED, cancelledAt: expect.any(Date) },
+        data: { status: BookingStatus.CANCELLED, cancelledAt: now },
       });
       expect(prisma.schedule.update).toHaveBeenCalledWith({
         where: { id: 'sch-1' },
@@ -458,42 +506,115 @@ describe('BookingService Unit Tests', () => {
         where: { id: 'pay-1' },
         data: { status: PaymentStatus.CANCELED },
       });
+      expect(prisma.refund.create).not.toHaveBeenCalled();
     });
 
-    it('keeps a COMPLETED payment as COMPLETED (refunds are a later feature)', async () => {
-      primeCancel({ ...ownedBooking, payment: { id: 'pay-1', status: PaymentStatus.COMPLETED } });
+    it('refunds a paid Stripe booking in full when departure is 24h or more away (spec 0004 AC-1)', async () => {
+      primeCancel({ ...ownedBooking, schedule: departingIn(24), payment: paidStripe });
 
-      await BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' });
+      const result = await BookingService.cancelBooking(
+        'book-1',
+        { userId: 'user-1', role: 'USER' },
+        now,
+      );
 
+      expect(prisma.refund.create).toHaveBeenCalledWith({
+        data: {
+          paymentId: 'pay-1',
+          amountCents: 6500,
+          reason: 'CUSTOMER_CANCEL',
+          status: 'PENDING',
+          requestedByUserId: 'user-1',
+        },
+      });
+      expect(result.refund).toEqual({ id: 'ref-1', amountCents: 6500, status: 'PENDING' });
       expect(prisma.payment.update).not.toHaveBeenCalled();
     });
 
-    it('returns seats only once when a concurrent cancel already won', async () => {
+    it('returns 409 REQUEST_REQUIRED inside 24h and changes nothing (spec 0004 AC-2)', async () => {
+      primeCancel({ ...ownedBooking, schedule: departingIn(23.99), payment: paidStripe });
+
+      await expect(
+        BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }, now),
+      ).rejects.toMatchObject({
+        statusCode: StatusCodes.CONFLICT,
+        data: { code: 'REQUEST_REQUIRED' },
+      });
+      expect(prisma.booking.updateMany).not.toHaveBeenCalled();
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('lets an unpaid hold be dropped inside 24h (spec 0004 AC-3)', async () => {
+      primeCancel({ ...ownedBooking, status: BookingStatus.PENDING, schedule: departingIn(2) });
+
+      const result = await BookingService.cancelBooking(
+        'book-1',
+        { userId: 'user-1', role: 'USER' },
+        now,
+      );
+      expect(result.status).toBe(BookingStatus.CANCELLED);
+    });
+
+    it('lets an admin cancel inside 24h with an ADMIN refund and closes a pending request (AC-19, AC-20)', async () => {
+      primeCancel({ ...ownedBooking, schedule: departingIn(1), payment: paidStripe });
+
+      await BookingService.cancelBooking('book-1', { userId: 'admin-1', role: 'ADMIN' }, now);
+
+      expect(prisma.refund.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ reason: 'ADMIN', amountCents: 6500 }),
+      });
+      expect(prisma.bookingRequest.updateMany).toHaveBeenCalledWith({
+        where: { bookingId: 'book-1', status: 'PENDING' },
+        data: expect.objectContaining({ status: 'CANCELLED', resolvedByUserId: 'admin-1' }),
+      });
+    });
+
+    it('creates no refund for a manual payment', async () => {
+      primeCancel({
+        ...ownedBooking,
+        payment: { ...paidStripe, provider: PaymentProvider.MANUAL },
+      });
+
+      await BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }, now);
+
+      expect(prisma.refund.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 BOOKING_CHANGED and touches no seats when a concurrent change won', async () => {
       primeCancel(ownedBooking, 0);
 
       await expect(
-        BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }),
-      ).rejects.toMatchObject({ statusCode: StatusCodes.BAD_REQUEST });
+        BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }, now),
+      ).rejects.toMatchObject({
+        statusCode: StatusCodes.CONFLICT,
+        data: { code: 'BOOKING_CHANGED' },
+      });
       expect(prisma.schedule.update).not.toHaveBeenCalled();
     });
 
-    it.each([BookingStatus.CHECKED_IN, BookingStatus.EXPIRED])(
-      'rejects cancelling a %s booking with 400',
-      async status => {
-        primeCancel({ ...ownedBooking, status });
+    it('rejects cancelling a CHECKED_IN booking with 409 BOARDED', async () => {
+      primeCancel({ ...ownedBooking, status: BookingStatus.CHECKED_IN });
 
-        await expect(
-          BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }),
-        ).rejects.toMatchObject({ statusCode: StatusCodes.BAD_REQUEST });
-        expect(prisma.booking.updateMany).not.toHaveBeenCalled();
-      },
-    );
+      await expect(
+        BookingService.cancelBooking('book-1', { userId: 'admin-1', role: 'ADMIN' }, now),
+      ).rejects.toMatchObject({ statusCode: StatusCodes.CONFLICT, data: { code: 'BOARDED' } });
+      expect(prisma.booking.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects cancelling an EXPIRED booking with 400', async () => {
+      primeCancel({ ...ownedBooking, status: BookingStatus.EXPIRED });
+
+      await expect(
+        BookingService.cancelBooking('book-1', { userId: 'user-1', role: 'USER' }, now),
+      ).rejects.toMatchObject({ statusCode: StatusCodes.BAD_REQUEST });
+      expect(prisma.booking.updateMany).not.toHaveBeenCalled();
+    });
 
     it('throws 403 when a signed in user does not own the booking and is not admin', async () => {
       primeCancel({ ...ownedBooking, userId: 'owner-user' });
 
       await expect(
-        BookingService.cancelBooking('book-1', { userId: 'attacker-user', role: 'USER' }),
+        BookingService.cancelBooking('book-1', { userId: 'attacker-user', role: 'USER' }, now),
       ).rejects.toMatchObject({
         statusCode: StatusCodes.FORBIDDEN,
       });
@@ -504,16 +625,16 @@ describe('BookingService Unit Tests', () => {
       primeCancel(guest);
 
       await expect(
-        BookingService.cancelBooking('book-1', { userId: null, email: 'nope@example.com' }),
+        BookingService.cancelBooking('book-1', { userId: null, email: 'nope@example.com' }, now),
       ).rejects.toMatchObject({ statusCode: StatusCodes.NOT_FOUND });
       await expect(
-        BookingService.cancelBooking('book-1', { userId: null }),
+        BookingService.cancelBooking('book-1', { userId: null }, now),
       ).rejects.toMatchObject({ statusCode: StatusCodes.NOT_FOUND });
 
       const result = await BookingService.cancelBooking('book-1', {
         userId: null,
         email: 'OWNER@example.com',
-      });
+      }, now);
       expect(result.status).toBe(BookingStatus.CANCELLED);
     });
   });
@@ -526,10 +647,14 @@ describe('BookingService Unit Tests', () => {
       vi.mocked(prisma.booking.findUnique).mockResolvedValue({
         id: 'book-1',
         status: BookingStatus.CONFIRMED,
-        schedule: { route: { operatorId: 'op-1' } },
+        scheduleId: 'sch-1',
+        returnScheduleId: null,
+        schedule: { ferry: { operatorId: 'op-1' } },
       } as any);
+      vi.mocked(prisma.booking.updateMany).mockResolvedValue({ count: 1 } as any);
       vi.mocked(prisma.ticket.updateMany).mockResolvedValue({ count: 2 } as any);
-      vi.mocked(prisma.booking.update).mockResolvedValue({
+      vi.mocked(prisma.bookingRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(prisma.booking.findUniqueOrThrow).mockResolvedValue({
         id: 'book-1',
         status: BookingStatus.CHECKED_IN,
       } as any);
@@ -537,6 +662,15 @@ describe('BookingService Unit Tests', () => {
       const result = await BookingService.checkInBooking('user-op-1', 'book-1');
 
       expect(result.status).toBe(BookingStatus.CHECKED_IN);
+      // Compare and swap claim, and a pending request is closed (spec 0004, AC-13, AC-19).
+      expect(prisma.booking.updateMany).toHaveBeenCalledWith({
+        where: { id: 'book-1', status: BookingStatus.CONFIRMED, scheduleId: 'sch-1', returnScheduleId: null },
+        data: { status: BookingStatus.CHECKED_IN },
+      });
+      expect(prisma.bookingRequest.updateMany).toHaveBeenCalledWith({
+        where: { bookingId: 'book-1', status: 'PENDING' },
+        data: expect.objectContaining({ status: 'REJECTED', staffNote: 'Closed: passenger checked in' }),
+      });
       expect(prisma.ticket.updateMany).toHaveBeenCalledWith({
         where: { bookingId: 'book-1' },
         data: { boardingStatus: BoardingStatus.CHECKED_IN },
@@ -550,7 +684,7 @@ describe('BookingService Unit Tests', () => {
         vi.mocked(prisma.booking.findUnique).mockResolvedValue({
           id: 'book-1',
           status,
-          schedule: { route: { operatorId: 'op-1' } },
+          schedule: { ferry: { operatorId: 'op-1' } },
         } as any);
 
         await expect(

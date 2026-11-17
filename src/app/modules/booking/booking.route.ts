@@ -45,6 +45,36 @@ router.get('/:reference', optionalAuth, BookingController.getBookingByReference)
 
 router.patch('/:id/cancel', optionalAuth, BookingController.cancelBooking);
 
+// Spec 0004: inside 24h the customer asks the operator instead of cancelling (AC-5, AC-6).
+router.post(
+  '/:idOrReference/requests',
+  optionalAuth,
+  validateRequest(BookingValidation.createBookingRequestZodSchema),
+  BookingController.createBookingRequest,
+);
+
+router.patch(
+  '/:idOrReference/requests/:requestId/withdraw',
+  optionalAuth,
+  BookingController.withdrawBookingRequest,
+);
+
+// Spec 0004: the trips a leg may move to, for staff and the customer's preferred trip (AC-15).
+router.get(
+  '/:idOrReference/move-options',
+  optionalAuth,
+  validateRequest(BookingValidation.moveOptionsQueryZodSchema),
+  BookingController.getMoveOptions,
+);
+
+// Spec 0004: a direct staff move, for example a no show (AC-11 to AC-14, AC-19).
+router.post(
+  '/:idOrReference/move',
+  auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
+  validateRequest(BookingValidation.moveBookingZodSchema),
+  BookingController.moveBooking,
+);
+
 router.patch(
   '/operator/:id/check-in',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
