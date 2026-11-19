@@ -4,9 +4,7 @@ import { ZodError } from 'zod';
 import { trace, SpanStatusCode, Span, context } from '@opentelemetry/api';
 import config from '../../config';
 import ApiError from '../../errors/ApiError';
-import handleValidationError from '../../errors/handleValidationError';
 import handleZodError from '../../errors/handleZodError';
-import handleCastError from '../../errors/handleCastError';
 import { errorLogger } from '../../shared/logger';
 import { IErrorMessage } from '../../types/errors.types';
 
@@ -93,42 +91,16 @@ const globalErrorHandler: ErrorRequestHandler = (error: unknown, req, res, next)
     } else if (
       typeof error === 'object' &&
       error !== null &&
-      (error as any).name === 'ValidationError'
+      (error as any).code === 'P2002'
     ) {
-      try {
-        const simplifiedError = handleValidationError(error as any);
-        statusCode = simplifiedError.statusCode;
-        message = simplifiedError.message;
-        errorMessages = simplifiedError.errorMessages;
-      } catch {
-        statusCode = StatusCodes.BAD_REQUEST;
-        message = 'Validation Error';
-        errorMessages = [];
-      }
-    } else if (
-      typeof error === 'object' &&
-      error !== null &&
-      (error as any).name === 'CastError'
-    ) {
-      try {
-        const simplifiedError = handleCastError(error as any);
-        statusCode = simplifiedError.statusCode;
-        message = simplifiedError.message;
-        errorMessages = simplifiedError.errorMessages;
-      } catch {
-        statusCode = StatusCodes.BAD_REQUEST;
-        message = 'Invalid ID format';
-        errorMessages = [];
-      }
-    } else if (
-      typeof error === 'object' &&
-      error !== null &&
-      (error as any).name === 'MongoServerError' &&
-      (error as any).code === 11000
-    ) {
+      // Prisma unique constraint violation; meta.target names the offending column(s).
       statusCode = StatusCodes.CONFLICT;
-      const keyValue = (error as any).keyValue;
-      const keys = keyValue && typeof keyValue === 'object' ? Object.keys(keyValue) : [];
+      const target = (error as any).meta?.target;
+      const keys = Array.isArray(target)
+        ? target.filter((t: unknown) => typeof t === 'string')
+        : typeof target === 'string'
+          ? [target]
+          : [];
       const duplicatedField = keys.length > 0 ? keys[0] : 'field';
       message = `${duplicatedField} already exists`;
       errorMessages = [

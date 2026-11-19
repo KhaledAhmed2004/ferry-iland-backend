@@ -2,7 +2,6 @@ import { FaqRoutes } from '../app/modules/faq/faq.route';
 import express from 'express';
 import { AuthRoutes } from '../app/modules/auth/auth.route';
 import { UserRoutes } from '../app/modules/user/user.route';
-import { NotificationRoutes } from '../app/modules/notification/notification.routes';
 import { DashboardRoutes } from '../app/modules/dashboard/dashboard.route';
 import { LegalRoutes } from '../app/modules/legal/legal.route';
 import { FerryRouteRoutes } from '../app/modules/route/route.route';
@@ -33,10 +32,6 @@ const apiRoutes = [
   {
     path: '/auth',
     route: AuthRoutes,
-  },
-  {
-    path: '/notifications',
-    route: NotificationRoutes,
   },
   {
     path: '/dashboard',

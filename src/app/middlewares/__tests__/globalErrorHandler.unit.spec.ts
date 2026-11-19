@@ -117,50 +117,12 @@ describe('globalErrorHandler (Comprehensive Verification Suite)', () => {
       expect(response.errorMessages.length).toBeGreaterThan(0);
     });
 
-    it('handles Mongoose ValidationError correctly', () => {
-      const validationError = {
-        name: 'ValidationError',
-        errors: {
-          email: { path: 'email', message: 'Path `email` is required.' },
-          role: { path: 'role', message: 'Path `role` is invalid.' },
-        },
-      };
-
-      globalErrorHandler(validationError, req as Request, res as Response, next);
-
-      expect(statusMock).toHaveBeenCalledWith(StatusCodes.BAD_REQUEST);
-      const response = jsonMock.mock.calls[0][0];
-      expect(response.message).toBe('Validation Error');
-      expect(response.errorMessages).toEqual([
-        { path: 'email', message: 'Path `email` is required.' },
-        { path: 'role', message: 'Path `role` is invalid.' },
-      ]);
-    });
-
-    it('handles Mongoose CastError correctly', () => {
-      const castError = {
-        name: 'CastError',
-        path: '_id',
-        value: 'invalid_id_123',
-      };
-
-      globalErrorHandler(castError, req as Request, res as Response, next);
-
-      expect(statusMock).toHaveBeenCalledWith(StatusCodes.BAD_REQUEST);
-      expect(jsonMock).toHaveBeenCalledWith({
-        success: false,
-        message: 'Invalid ID format',
-        errorMessages: [{ path: '_id', message: "Invalid value 'invalid_id_123' for field '_id'" }],
-        stack: undefined,
-      });
-    });
-
-    describe('MongoServerError duplicate key (code 11000)', () => {
-      it('handles populated keyValue', () => {
+    describe('Prisma unique constraint violation (P2002)', () => {
+      it('names the duplicated column from meta.target', () => {
         const error = {
-          name: 'MongoServerError',
-          code: 11000,
-          keyValue: { email: 'duplicate@example.com' },
+          name: 'PrismaClientKnownRequestError',
+          code: 'P2002',
+          meta: { target: ['email'] },
         };
 
         globalErrorHandler(error, req as Request, res as Response, next);
@@ -174,11 +136,28 @@ describe('globalErrorHandler (Comprehensive Verification Suite)', () => {
         });
       });
 
-      it('safely handles empty keyValue object without undefined field', () => {
+      it('accepts a plain string meta.target', () => {
         const error = {
-          name: 'MongoServerError',
-          code: 11000,
-          keyValue: {},
+          name: 'PrismaClientKnownRequestError',
+          code: 'P2002',
+          meta: { target: 'reference' },
+        };
+
+        globalErrorHandler(error, req as Request, res as Response, next);
+
+        expect(statusMock).toHaveBeenCalledWith(StatusCodes.CONFLICT);
+        expect(jsonMock).toHaveBeenCalledWith({
+          success: false,
+          message: 'reference already exists',
+          errorMessages: [{ path: 'reference', message: 'reference must be unique' }],
+          stack: undefined,
+        });
+      });
+
+      it('falls back to a generic field name when meta is missing', () => {
+        const error = {
+          name: 'PrismaClientKnownRequestError',
+          code: 'P2002',
         };
 
         globalErrorHandler(error, req as Request, res as Response, next);
@@ -192,10 +171,11 @@ describe('globalErrorHandler (Comprehensive Verification Suite)', () => {
         });
       });
 
-      it('safely handles missing keyValue without crash', () => {
+      it('falls back to a generic field name when meta.target is empty', () => {
         const error = {
-          name: 'MongoServerError',
-          code: 11000,
+          name: 'PrismaClientKnownRequestError',
+          code: 'P2002',
+          meta: { target: [] },
         };
 
         globalErrorHandler(error, req as Request, res as Response, next);
@@ -369,36 +349,6 @@ describe('globalErrorHandler (Comprehensive Verification Suite)', () => {
 
       expect(statusMock).toHaveBeenCalledWith(StatusCodes.BAD_REQUEST);
       expect(jsonMock).toHaveBeenCalled();
-    });
-
-    it('safely falls back if ValidationError object is malformed', () => {
-      const malformedValidationError = {
-        name: 'ValidationError',
-        errors: undefined, // Will break Object.values(error.errors) if not guarded
-      };
-
-      globalErrorHandler(malformedValidationError, req as Request, res as Response, next);
-
-      expect(statusMock).toHaveBeenCalledWith(StatusCodes.BAD_REQUEST);
-      expect(jsonMock).toHaveBeenCalledWith({
-        success: false,
-        message: 'Validation Error',
-        errorMessages: [],
-        stack: undefined,
-      });
-    });
-
-    it('safely falls back if CastError object is malformed', () => {
-      const malformedCastError = {
-        name: 'CastError',
-        // missing path/value
-      };
-
-      globalErrorHandler(malformedCastError, req as Request, res as Response, next);
-
-      expect(statusMock).toHaveBeenCalledWith(StatusCodes.BAD_REQUEST);
-      const response = jsonMock.mock.calls[0][0];
-      expect(response.message).toBe('Invalid ID format');
     });
   });
 

@@ -5,20 +5,17 @@
  * This prevents subtle bugs caused by importing modules before their dependencies.
  *
  * Critical Load Order:
- * 1. mongooseMetrics - MUST load before any Mongoose models compile
- * 2. autoLabelBootstrap - MUST load before controllers/services are imported
- * 3. opentelemetry - Should load early for instrumentation
- * 4. Third-party patches (bcrypt, JWT, Stripe) - Before their usage
- * 5. Routes - Load AFTER all patches and auto-labeling
+ * 1. autoLabelBootstrap - MUST load before controllers/services are imported
+ * 2. opentelemetry - Should load early for instrumentation
+ * 3. Third-party patches (bcrypt, JWT, Stripe) - Before their usage
+ * 4. Routes - Load AFTER all patches and auto-labeling
  */
 
 type LoadStage =
-  | 'MONGOOSE_METRICS'
   | 'AUTO_LABEL'
   | 'OPENTELEMETRY'
   | 'PATCHES'
-  | 'ROUTES'
-  | 'MODELS';
+  | 'ROUTES';
 
 class LoadOrderValidator {
   private static loadedStages = new Set<LoadStage>();
@@ -52,12 +49,10 @@ class LoadOrderValidator {
         `   Current stage: ${currentStage}`,
         `   Missing required stages: ${missing.join(', ')}`,
         `\n   Correct order should be:`,
-        `   1. MONGOOSE_METRICS (mongooseMetrics.ts)`,
-        `   2. AUTO_LABEL (autoLabelBootstrap.ts)`,
-        `   3. OPENTELEMETRY (opentelemetry.ts)`,
-        `   4. PATCHES (patchBcrypt.ts, patchJWT.ts, patchStripe.ts)`,
-        `   5. ROUTES (routes/index.ts)`,
-        `   6. MODELS (after mongooseMetrics)`,
+        `   1. AUTO_LABEL (autoLabelBootstrap.ts)`,
+        `   2. OPENTELEMETRY (opentelemetry.ts)`,
+        `   3. PATCHES (patchBcrypt.ts, patchJWT.ts, patchStripe.ts)`,
+        `   4. ROUTES (routes/index.ts)`,
         `\n   See CLAUDE.md for detailed explanation.`,
       ].join('\n');
 

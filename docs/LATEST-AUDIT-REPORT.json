@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-19T04:53:36.860Z",
-  "auditDurationSec": 6.5,
+  "timestamp": "2026-11-19T05:30:13.948Z",
+  "auditDurationSec": 5.1,
   "is100PercentReady": true,
   "summary": {
-    "routesCount": 108,
+    "routesCount": 104,
     "testSuitePassed": true,
     "testFilesPassed": 14,
-    "testsPassed": 229,
+    "testsPassed": 226,
     "databaseReady": true,
     "e2eFlowVerified": true
   },
@@ -231,26 +231,6 @@
         "method": "PATCH",
         "path": "/:legalId",
         "file": "src/app/modules/legal/legal.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/",
-        "file": "src/app/modules/notification/notification.routes.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:notificationId/read",
-        "file": "src/app/modules/notification/notification.routes.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/read-all",
-        "file": "src/app/modules/notification/notification.routes.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/:notificationId",
-        "file": "src/app/modules/notification/notification.routes.ts"
       },
       {
         "method": "POST",
@@ -567,12 +547,12 @@
     "routes": 14,
     "totalSchedules": 31,
     "futureBookableSchedules": 8,
-    "bookings": 47,
-    "tickets": 78
+    "bookings": 49,
+    "tickets": 82
   },
   "tests": {
     "passed": true,
-    "summary": "14 test files, 229 tests passed (100%)"
+    "summary": "14 test files, 226 tests passed (100%)"
   },
   "e2eFlow": {
     "verified": true,
