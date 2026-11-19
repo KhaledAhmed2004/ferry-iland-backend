@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-19T05:38:28.115Z",
-  "auditDurationSec": 5.2,
+  "timestamp": "2026-11-19T05:49:30.711Z",
+  "auditDurationSec": 5.1,
   "is100PercentReady": true,
   "summary": {
     "routesCount": 104,
@@ -547,8 +547,8 @@
     "routes": 14,
     "totalSchedules": 31,
     "futureBookableSchedules": 8,
-    "bookings": 51,
-    "tickets": 86
+    "bookings": 52,
+    "tickets": 88
   },
   "tests": {
     "passed": true,
