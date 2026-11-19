@@ -5,6 +5,7 @@ import { prisma } from '../../../shared/prisma';
 import { logger } from '../../../shared/logger';
 import { deleteFile } from '../../middlewares/fileHandler';
 import { SessionService, RevocationReason } from '../session/session.service';
+import { ProviderEmails } from './provider.email';
 import {
   IOperatorSettingsUpdatePayload,
   IProviderFilterRequest,
@@ -201,7 +202,7 @@ const updateProviderStatus = async (
     );
   }
 
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     await tx.user.update({
       where: { id: provider.userId },
       data: { status: payload.status },
@@ -263,6 +264,17 @@ const updateProviderStatus = async (
       deactivatedTripsCount,
     };
   });
+
+  // Tell the operator what happened, after the change has committed. A suspended
+  // operator is already signed out by now, so email is the only way to reach them.
+  // These never throw: a mail problem must not undo the status change.
+  if (payload.status === AccountStatus.SUSPENDED) {
+    void ProviderEmails.sendOperatorSuspended(providerId, result.deactivatedTripsCount);
+  } else if (payload.status === AccountStatus.ACTIVE) {
+    void ProviderEmails.sendOperatorReactivated(providerId);
+  }
+
+  return result;
 };
 
 const getOperatorSettings = async (userId: string) => {

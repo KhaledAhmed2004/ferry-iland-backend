@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-19T05:33:52.019Z",
-  "auditDurationSec": 4.9,
+  "timestamp": "2026-11-19T05:38:28.115Z",
+  "auditDurationSec": 5.2,
   "is100PercentReady": true,
   "summary": {
     "routesCount": 104,
     "testSuitePassed": true,
-    "testFilesPassed": 14,
-    "testsPassed": 226,
+    "testFilesPassed": 16,
+    "testsPassed": 245,
     "databaseReady": true,
     "e2eFlowVerified": true
   },
@@ -547,12 +547,12 @@
     "routes": 14,
     "totalSchedules": 31,
     "futureBookableSchedules": 8,
-    "bookings": 50,
-    "tickets": 84
+    "bookings": 51,
+    "tickets": 86
   },
   "tests": {
     "passed": true,
-    "summary": "14 test files, 226 tests passed (100%)"
+    "summary": "16 test files, 245 tests passed (100%)"
   },
   "e2eFlow": {
     "verified": true,

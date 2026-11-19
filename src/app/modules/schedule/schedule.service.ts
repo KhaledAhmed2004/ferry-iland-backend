@@ -11,6 +11,7 @@ import ApiError from '../../../errors/ApiError';
 import { SEARCH_TRIP_TYPE_TO_ENUM, getFarePerPassenger } from '../booking/booking.fare';
 import { prisma } from '../../../shared/prisma';
 import { getDynamicVesselImage } from '../../../shared/mediaCatalog';
+import { ScheduleEmails } from './schedule.email';
 import {
   ICreateSchedulePayload,
   IScheduleFilterOptions,
@@ -465,10 +466,21 @@ const updateScheduleStatus = async (
     throw new ApiError(StatusCodes.NOT_FOUND, 'Schedule slot not found');
   }
 
-  return prisma.schedule.update({
+  const updated = await prisma.schedule.update({
     where: { id: scheduleId },
     data: { status: newStatus },
   });
+
+  // A cancelled sailing has to reach the passengers holding a ticket for it.
+  // Fires after the commit and never throws, so the cancellation stays applied.
+  if (
+    newStatus === TripStatus.CANCELLED &&
+    existingSchedule.status !== TripStatus.CANCELLED
+  ) {
+    void ScheduleEmails.sendTripCancelled(scheduleId);
+  }
+
+  return updated;
 };
 
 const deleteSchedule = async (userId: string, scheduleId: string) => {
@@ -533,6 +545,20 @@ const bulkUpdateScheduleStatus = async (
 ) => {
   const operator = await resolveOperatorProfile(userId);
 
+  // Captured before the update: only this operator's sailings that are not
+  // already cancelled will actually change, and only those owe an email.
+  const newlyCancelling =
+    status === TripStatus.CANCELLED
+      ? await prisma.schedule.findMany({
+          where: {
+            id: { in: ids },
+            ferry: { operatorId: operator.id },
+            status: { not: TripStatus.CANCELLED },
+          },
+          select: { id: true },
+        })
+      : [];
+
   const result = await prisma.schedule.updateMany({
     where: {
       id: { in: ids },
@@ -540,6 +566,10 @@ const bulkUpdateScheduleStatus = async (
     },
     data: { status },
   });
+
+  if (newlyCancelling.length > 0) {
+    void ScheduleEmails.sendTripsCancelled(newlyCancelling.map(s => s.id));
+  }
 
   return {
     count: result.count,
