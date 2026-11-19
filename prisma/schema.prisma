@@ -41,9 +41,6 @@ model User {
   mfaCredential       MfaCredential?
   verificationTokens  VerificationToken[]
   operatorProfile     OperatorProfile?
-  supportTickets      SupportTicket[]
-  chatParticipants    ChatParticipant[]
-  messages            Message[]
   bookings            Booking[]
   requestedRefunds    Refund[]
   bookingRequests     BookingRequest[] @relation("BookingRequestRequestedBy")
@@ -155,80 +152,6 @@ model Route {
   @@unique([departurePortId, destinationPortId])
   @@index([departurePortId])
   @@index([destinationPortId])
-}
-
-enum TicketStatus {
-  OPEN
-  IN_PROGRESS
-  RESOLVED
-  CLOSED
-}
-
-model SupportTicket {
-  id        String           @id @default(uuid()) @db.Uuid
-  subject   String
-  userId    String           @db.Uuid
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status    TicketStatus     @default(OPEN)
-  messages  SupportMessage[]
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-
-  @@index([userId])
-}
-
-model SupportMessage {
-  id        String        @id @default(uuid()) @db.Uuid
-  ticketId  String        @db.Uuid
-  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  senderId  String        @db.Uuid
-  message   String
-  createdAt DateTime      @default(now())
-
-  @@index([ticketId])
-}
-
-model Chat {
-  id              String            @id @default(uuid()) @db.Uuid
-  conversationKey String?           @unique
-  lastMessage     String?
-  lastMessageAt   DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-
-  participants    ChatParticipant[]
-  messages        Message[]
-}
-
-model ChatParticipant {
-  id        String   @id @default(uuid()) @db.Uuid
-  chatId    String   @db.Uuid
-  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-
-  @@unique([chatId, userId])
-  @@index([userId])
-}
-
-model Message {
-  id          String    @id @default(uuid()) @db.Uuid
-  chatId      String    @db.Uuid
-  chat        Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  senderId    String    @db.Uuid
-  sender      User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
-  text        String?
-  attachments String[]  @default([])
-  replyToId   String?   @db.Uuid
-  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
-  replies     Message[] @relation("MessageReplies")
-  readByIds   String[]  @default([])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@index([chatId, createdAt])
-  @@index([senderId])
 }
 
 enum VesselType {
