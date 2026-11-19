@@ -95,7 +95,7 @@ async function cancelWithFailedRefund() {
   return { ...paid, failed };
 }
 
-describe('POST /refunds/:id/retry (AC-21)', () => {
+describe('POST /refunds/:refundId/retry (AC-21)', () => {
   it('the customer sees the failed state; an admin retry sends a new key and the money goes back', async () => {
     const { booking, email, payment, failed } = await cancelWithFailedRefund();
 

@@ -154,7 +154,7 @@ describe('POST /bookings/:idOrReference/requests (customer)', () => {
   });
 });
 
-describe('GET /booking-requests and PATCH /booking-requests/:id/resolve (staff)', () => {
+describe('GET /booking-requests and PATCH /booking-requests/:requestId/resolve (staff)', () => {
   it('operator sees only their own requests; pendingCount ignores the status filter (AC-7)', async () => {
     const mine = await bookPaid(5);
     const theirs = await bookPaid(5);

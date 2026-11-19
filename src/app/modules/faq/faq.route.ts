@@ -7,13 +7,10 @@ import { FaqValidation } from './faq.validation';
 
 const router = express.Router();
 
-// Public passenger help endpoint
-router.get(
-  '/public',
-  FaqController.getPublicFaqs,
-);
+// Public FAQ endpoint - Only published FAQs, no pagination (for Help Center & Landing page)
+router.get('/public', FaqController.getPublicFaqs);
 
-// Admin management endpoints
+// Admin FAQ management endpoints
 router.post(
   '/',
   auth(USER_ROLES.ADMIN),
@@ -23,49 +20,18 @@ router.post(
 
 router.get(
   '/',
+  auth(USER_ROLES.ADMIN),
   validateRequest(FaqValidation.listFaqsQueryZodSchema),
   FaqController.listFaqs,
 );
 
-
-// Bulk action management endpoints
 router.patch(
-  '/bulk/publish',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(FaqValidation.bulkPublishZodSchema),
-  FaqController.bulkUpdatePublish,
-);
-
-router.patch(
-  '/bulk/category',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(FaqValidation.bulkCategoryZodSchema),
-  FaqController.bulkUpdateCategory,
-);
-
-router.post(
-  '/bulk/delete',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(FaqValidation.bulkDeleteZodSchema),
-  FaqController.bulkDelete,
-);
-
-router.get(
-  '/:id',
-  FaqController.getFaqById,
-);
-
-router.patch(
-  '/:id',
+  '/:faqId',
   auth(USER_ROLES.ADMIN),
   validateRequest(FaqValidation.updateFaqZodSchema),
   FaqController.updateFaq,
 );
 
-router.delete(
-  '/:id',
-  auth(USER_ROLES.ADMIN),
-  FaqController.deleteFaq,
-);
+router.delete('/:faqId', auth(USER_ROLES.ADMIN), FaqController.deleteFaq);
 
 export const FaqRoutes = router;

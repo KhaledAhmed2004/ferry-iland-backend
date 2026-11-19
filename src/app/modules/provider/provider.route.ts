@@ -8,19 +8,6 @@ import { ProviderValidation } from './provider.validation';
 const router = express.Router();
 
 router.get(
-  '/settings',
-  auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
-  ProviderController.getOperatorSettings,
-);
-
-router.patch(
-  '/settings',
-  auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
-  validateRequest(ProviderValidation.updateOperatorSettingsZodSchema),
-  ProviderController.updateOperatorSettings,
-);
-
-router.get(
   '/',
   auth(USER_ROLES.ADMIN),
   validateRequest(ProviderValidation.listProvidersQueryZodSchema),
@@ -28,13 +15,13 @@ router.get(
 );
 
 router.get(
-  '/:id',
+  '/:providerId',
   auth(USER_ROLES.ADMIN),
   ProviderController.getProviderById,
 );
 
 router.patch(
-  '/:id/status',
+  '/:providerId/status',
   auth(USER_ROLES.ADMIN),
   validateRequest(ProviderValidation.updateProviderStatusZodSchema),
   ProviderController.updateProviderStatus,

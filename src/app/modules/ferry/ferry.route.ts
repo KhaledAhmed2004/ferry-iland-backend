@@ -15,7 +15,7 @@ router.post(
   FerryController.createFerry,
 );
 
-// Get list of all ferries (with filtering & pagination)
+// Get list of all ferries
 router.get(
   '/',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
@@ -32,14 +32,14 @@ router.get(
 
 // Get single ferry details by ID
 router.get(
-  '/:id',
+  '/:ferryId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   FerryController.getFerryById,
 );
 
 // Update ferry details by ID
 router.patch(
-  '/:id',
+  '/:ferryId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(FerryValidation.updateFerryZodSchema),
   FerryController.updateFerry,
@@ -47,7 +47,7 @@ router.patch(
 
 // Delete ferry by ID
 router.delete(
-  '/:id',
+  '/:ferryId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   FerryController.deleteFerry,
 );

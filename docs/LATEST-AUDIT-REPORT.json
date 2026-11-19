@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-16T10:39:46.671Z",
+  "timestamp": "2026-11-19T04:53:36.860Z",
   "auditDurationSec": 6.5,
   "is100PercentReady": true,
   "summary": {
-    "routesCount": 135,
+    "routesCount": 108,
     "testSuitePassed": true,
-    "testFilesPassed": 22,
-    "testsPassed": 340,
+    "testFilesPassed": 14,
+    "testsPassed": 229,
     "databaseReady": true,
     "e2eFlowVerified": true
   },
@@ -24,17 +24,7 @@
       },
       {
         "method": "POST",
-        "path": "/verify-email",
-        "file": "src/app/modules/auth/auth.route.ts"
-      },
-      {
-        "method": "POST",
         "path": "/email/resend-otp",
-        "file": "src/app/modules/auth/auth.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/verify-email/resend",
         "file": "src/app/modules/auth/auth.route.ts"
       },
       {
@@ -84,6 +74,11 @@
       },
       {
         "method": "GET",
+        "path": "/admin/:reference",
+        "file": "src/app/modules/booking/booking.route.ts"
+      },
+      {
+        "method": "GET",
         "path": "/operator",
         "file": "src/app/modules/booking/booking.route.ts"
       },
@@ -94,7 +89,7 @@
       },
       {
         "method": "PATCH",
-        "path": "/:id/cancel",
+        "path": "/:bookingId/cancel",
         "file": "src/app/modules/booking/booking.route.ts"
       },
       {
@@ -119,7 +114,7 @@
       },
       {
         "method": "PATCH",
-        "path": "/operator/:id/check-in",
+        "path": "/operator/:bookingId/check-in",
         "file": "src/app/modules/booking/booking.route.ts"
       },
       {
@@ -129,33 +124,13 @@
       },
       {
         "method": "PATCH",
-        "path": "/:id/resolve",
+        "path": "/:requestId/resolve",
         "file": "src/app/modules/bookingRequest/bookingRequest.route.ts"
       },
       {
         "method": "POST",
-        "path": "/:id/retry",
+        "path": "/:refundId/retry",
         "file": "src/app/modules/bookingRequest/refundRetry.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/",
-        "file": "src/app/modules/chat/chat.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/",
-        "file": "src/app/modules/chat/chat.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/:chatId",
-        "file": "src/app/modules/chat/chat.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/:chatId",
-        "file": "src/app/modules/chat/chat.route.ts"
       },
       {
         "method": "GET",
@@ -204,32 +179,12 @@
       },
       {
         "method": "PATCH",
-        "path": "/bulk/publish",
-        "file": "src/app/modules/faq/faq.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/bulk/category",
-        "file": "src/app/modules/faq/faq.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/bulk/delete",
-        "file": "src/app/modules/faq/faq.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/:id",
-        "file": "src/app/modules/faq/faq.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/:id",
+        "path": "/:faqId",
         "file": "src/app/modules/faq/faq.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:faqId",
         "file": "src/app/modules/faq/faq.route.ts"
       },
       {
@@ -249,17 +204,17 @@
       },
       {
         "method": "GET",
-        "path": "/:id",
+        "path": "/:ferryId",
         "file": "src/app/modules/ferry/ferry.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:ferryId",
         "file": "src/app/modules/ferry/ferry.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:ferryId",
         "file": "src/app/modules/ferry/ferry.route.ts"
       },
       {
@@ -273,29 +228,9 @@
         "file": "src/app/modules/legal/legal.route.ts"
       },
       {
-        "method": "POST",
-        "path": "/",
-        "file": "src/app/modules/legal/legal.route.ts"
-      },
-      {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:legalId",
         "file": "src/app/modules/legal/legal.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/:id",
-        "file": "src/app/modules/legal/legal.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/:chatId",
-        "file": "src/app/modules/message/message.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/:chatId",
-        "file": "src/app/modules/message/message.route.ts"
       },
       {
         "method": "GET",
@@ -329,17 +264,17 @@
       },
       {
         "method": "GET",
-        "path": "/:id",
+        "path": "/:offDayId",
         "file": "src/app/modules/offDay/offDay.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:offDayId",
         "file": "src/app/modules/offDay/offDay.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:offDayId",
         "file": "src/app/modules/offDay/offDay.route.ts"
       },
       {
@@ -369,28 +304,18 @@
       },
       {
         "method": "GET",
-        "path": "/:id",
+        "path": "/:portId",
         "file": "src/app/modules/port/port.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:portId",
         "file": "src/app/modules/port/port.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:portId",
         "file": "src/app/modules/port/port.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/settings",
-        "file": "src/app/modules/provider/provider.route.ts"
-      },
-      {
-        "method": "PATCH",
-        "path": "/settings",
-        "file": "src/app/modules/provider/provider.route.ts"
       },
       {
         "method": "GET",
@@ -399,12 +324,12 @@
       },
       {
         "method": "GET",
-        "path": "/:id",
+        "path": "/:providerId",
         "file": "src/app/modules/provider/provider.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id/status",
+        "path": "/:providerId/status",
         "file": "src/app/modules/provider/provider.route.ts"
       },
       {
@@ -453,16 +378,6 @@
         "file": "src/app/modules/schedule/schedule.route.ts"
       },
       {
-        "method": "GET",
-        "path": "/public/:id",
-        "file": "src/app/modules/schedule/schedule.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/details/:id",
-        "file": "src/app/modules/schedule/schedule.route.ts"
-      },
-      {
         "method": "POST",
         "path": "/",
         "file": "src/app/modules/schedule/schedule.route.ts"
@@ -484,63 +399,23 @@
       },
       {
         "method": "GET",
-        "path": "/:id",
+        "path": "/:scheduleId",
         "file": "src/app/modules/schedule/schedule.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id",
+        "path": "/:scheduleId",
         "file": "src/app/modules/schedule/schedule.route.ts"
       },
       {
         "method": "PATCH",
-        "path": "/:id/status",
+        "path": "/:scheduleId/status",
         "file": "src/app/modules/schedule/schedule.route.ts"
       },
       {
         "method": "DELETE",
-        "path": "/:id",
+        "path": "/:scheduleId",
         "file": "src/app/modules/schedule/schedule.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/reward-split",
-        "file": "src/app/modules/setting/setting.route.ts"
-      },
-      {
-        "method": "PUT",
-        "path": "/reward-split",
-        "file": "src/app/modules/setting/setting.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/",
-        "file": "src/app/modules/support/support.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/my-tickets",
-        "file": "src/app/modules/support/support.route.ts"
-      },
-      {
-        "method": "POST",
-        "path": "/:id/messages",
-        "file": "src/app/modules/support/support.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/:id",
-        "file": "src/app/modules/support/support.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/",
-        "file": "src/app/modules/support/support.route.ts"
-      },
-      {
-        "method": "DELETE",
-        "path": "/:id",
-        "file": "src/app/modules/support/support.route.ts"
       },
       {
         "method": "GET",
@@ -641,7 +516,7 @@
       },
       {
         "method": "PATCH",
-        "path": "/bookings/:id/check-in",
+        "path": "/bookings/:bookingId/check-in",
         "file": "src/app/modules/operator/operator.route.ts"
       }
     ],
@@ -649,16 +524,6 @@
       {
         "method": "GET",
         "path": "/analytics/overview",
-        "file": "src/app/modules/admin/admin.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/bookings",
-        "file": "src/app/modules/admin/admin.route.ts"
-      },
-      {
-        "method": "GET",
-        "path": "/bookings/:reference",
         "file": "src/app/modules/admin/admin.route.ts"
       },
       {
@@ -700,14 +565,14 @@
     "operators": 1,
     "ferries": 3,
     "routes": 14,
-    "totalSchedules": 9,
-    "futureBookableSchedules": 6,
-    "bookings": 23,
-    "tickets": 30
+    "totalSchedules": 31,
+    "futureBookableSchedules": 8,
+    "bookings": 47,
+    "tickets": 78
   },
   "tests": {
     "passed": true,
-    "summary": "22 test files, 340 tests passed (100%)"
+    "summary": "14 test files, 229 tests passed (100%)"
   },
   "e2eFlow": {
     "verified": true,

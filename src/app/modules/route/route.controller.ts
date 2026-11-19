@@ -30,8 +30,7 @@ const listRoutes = catchAsync(async (req: Request, res: Response) => {
 });
 
 const updateRoute = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-  const routeId = req.params.routeId || req.params.id;
+  const routeId = req.params.routeId as string;
   const result = await RouteService.updateRoute(routeId, req.body);
 
   sendResponse(res, {
@@ -43,8 +42,7 @@ const updateRoute = catchAsync(async (req: Request, res: Response) => {
 });
 
 const deleteRoute = catchAsync(async (req: Request, res: Response) => {
-  const user = req.user as IAuthUser;
-  const routeId = req.params.routeId || req.params.id;
+  const routeId = req.params.routeId as string;
   const result = await RouteService.deleteRoute(routeId);
 
   sendResponse(res, {

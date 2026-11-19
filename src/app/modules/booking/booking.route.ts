@@ -35,15 +35,25 @@ router.get(
 );
 
 router.get(
+  '/admin/:reference',
+  auth(USER_ROLES.ADMIN),
+  BookingController.getBookingByReference,
+);
+
+router.get(
   '/operator',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(BookingValidation.listBookingsQueryZodSchema),
   BookingController.listOperatorBookings,
 );
 
-router.get('/:reference', optionalAuth, BookingController.getBookingByReference);
+router.get(
+  '/:reference',
+  optionalAuth,
+  BookingController.getBookingByReference,
+);
 
-router.patch('/:id/cancel', optionalAuth, BookingController.cancelBooking);
+router.patch('/:bookingId/cancel', optionalAuth, BookingController.cancelBooking);
 
 // Spec 0004: inside 24h the customer asks the operator instead of cancelling (AC-5, AC-6).
 router.post(
@@ -76,7 +86,7 @@ router.post(
 );
 
 router.patch(
-  '/operator/:id/check-in',
+  '/operator/:bookingId/check-in',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   BookingController.checkInBooking,
 );

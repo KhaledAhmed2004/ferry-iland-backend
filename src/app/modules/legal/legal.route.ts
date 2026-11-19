@@ -18,28 +18,12 @@ router.get(
   LegalController.getByIdOrSlug,
 );
 
-// Admin: Create new legal page
-router.post(
-  '/',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(LegalValidation.createLegalPage),
-  LegalController.createLegalPage,
-);
-
-// Admin: Update legal page by ID
+// Admin: Update legal page by ID (title, content, isPublished only - slug is immutable)
 router.patch(
-  '/:id',
+  '/:legalId',
   auth(USER_ROLES.ADMIN),
   validateRequest(LegalValidation.updateLegalPage),
   LegalController.updateById,
-);
-
-// Admin: Delete legal page by ID
-router.delete(
-  '/:id',
-  auth(USER_ROLES.ADMIN),
-  validateRequest(LegalValidation.deleteLegalPage),
-  LegalController.deleteById,
 );
 
 export const LegalRoutes = router;

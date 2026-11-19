@@ -9,12 +9,22 @@ import express from 'express';
 
 const router = express.Router();
 
+// Roles permitted to access self-service account routes
 const ALL_ROLES = [USER_ROLES.USER, USER_ROLES.OPERATOR, USER_ROLES.ADMIN];
 
-// Get current authenticated user profile and details
+/**
+ * @route   GET /api/v1/users/me
+ * @desc    Get currently authenticated user's profile
+ * @access  Private (USER, OPERATOR, ADMIN)
+ */
 router.get('/me', auth(...ALL_ROLES), UserController.getProfile);
 
-// Update user profile
+/**
+ * @route   PATCH /api/v1/users/me
+ * @desc    Update current user's profile information and profile picture
+ * @access  Private (USER, OPERATOR, ADMIN)
+ * @middleware fileHandler (profilePicture upload), validateRequest (Zod validation)
+ */
 router.patch(
   '/me',
   auth(...ALL_ROLES),
@@ -23,7 +33,12 @@ router.patch(
   UserController.updateMyProfile,
 );
 
-// Change password for authenticated user and invalidate active sessions
+/**
+ * @route   PATCH /api/v1/users/me/password
+ * @desc    Change password for the authenticated user
+ * @access  Private (USER, OPERATOR, ADMIN)
+ * @middleware validateRequest (old and new password validation)
+ */
 router.patch(
   '/me/password',
   auth(...ALL_ROLES),
@@ -31,13 +46,27 @@ router.patch(
   UserController.updatePassword,
 );
 
-// Get platform-wide user statistics for admin management
+/**
+ * @route   GET /api/v1/users/stats
+ * @desc    Get platform-wide user analytics and statistics
+ * @access  Private (ADMIN only)
+ * @note    Defined before /:userId so that 'stats' is not evaluated as a dynamic userId param
+ */
 router.get('/stats', auth(USER_ROLES.ADMIN), UserController.getUserStats);
 
-// Get paginated list of all users with search and filter queries
+/**
+ * @route   GET /api/v1/users
+ * @desc    Get paginated, searchable, and filterable list of all registered users
+ * @access  Private (ADMIN only)
+ */
 router.get('/', auth(USER_ROLES.ADMIN), UserController.getAllUsers);
 
-// Get detailed user profile by user ID
+/**
+ * @route   GET /api/v1/users/:userId
+ * @desc    Get profile information for a specific user by ID
+ * @access  Private (USER, OPERATOR, ADMIN)
+ * @middleware rateLimitMiddleware (60 requests per minute limit)
+ */
 router.get(
   '/:userId',
   auth(...ALL_ROLES),
@@ -49,7 +78,12 @@ router.get(
   UserController.getUserById,
 );
 
-// Update account status for a specific user
+/**
+ * @route   PATCH /api/v1/users/:userId/status
+ * @desc    Update account status of a specific user (e.g., ACTIVE, SUSPENDED, BANNED)
+ * @access  Private (ADMIN only)
+ * @middleware validateRequest (status schema validation)
+ */
 router.patch(
   '/:userId/status',
   auth(USER_ROLES.ADMIN),

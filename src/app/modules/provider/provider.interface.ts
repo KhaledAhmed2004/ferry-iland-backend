@@ -35,23 +35,3 @@ export interface IProviderFilterRequest {
   sortBy?: ProviderSortField;
   sortOrder?: 'asc' | 'desc';
 }
-
-export interface IProviderListResult {
-  id: string;
-  userId: string;
-  companyName: string;
-  contactPersonName: string;
-  contactEmail: string | null;
-  businessAddress: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  user: {
-    id: string;
-    email: string;
-    name: string;
-    status: AccountStatus;
-  };
-  ferriesCount: number;
-  routesCount: number;
-  schedulesCount: number;
-}

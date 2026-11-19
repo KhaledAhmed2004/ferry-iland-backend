@@ -22,10 +22,7 @@ const resolveOperatorProfile = async (userId: string) => {
   return operator;
 };
 
-const createOffDay = async (
-  userId: string,
-  payload: ICreateOffDayPayload,
-) => {
+const createOffDay = async (userId: string, payload: ICreateOffDayPayload) => {
   const operator = await resolveOperatorProfile(userId);
 
   if (payload.ferryId) {

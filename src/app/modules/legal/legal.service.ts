@@ -1,25 +1,12 @@
 import { StatusCodes } from 'http-status-codes';
 import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
-import {
-  ICreateLegalPagePayload,
-  ILegalPage,
-  IUpdateLegalPagePayload,
-} from './legal.interface';
+import { ILegalPage, IUpdateLegalPagePayload } from './legal.interface';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const generateSlug = (title: string): string => {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-};
-
-const DEFAULT_LEGAL_DOCS = [
+export const DEFAULT_LEGAL_DOCS = [
   {
     title: 'Terms of Service',
     slug: 'terms-of-service',
@@ -92,41 +79,19 @@ In the event of rough sea conditions or mechanical maintenance:
   },
 ];
 
-const ensureDefaultLegalPages = async () => {
-  const count = await prisma.legalPage.count();
-  if (count === 0) {
-    for (const doc of DEFAULT_LEGAL_DOCS) {
-      await prisma.legalPage.create({
-        data: doc,
-      });
-    }
+const ensureDefaultLegalPages = async (): Promise<void> => {
+  for (const doc of DEFAULT_LEGAL_DOCS) {
+    await prisma.legalPage.upsert({
+      where: { slug: doc.slug },
+      update: {}, // Preserve any existing edits made by admin
+      create: {
+        title: doc.title,
+        slug: doc.slug,
+        content: doc.content,
+        isPublished: doc.isPublished,
+      },
+    });
   }
-};
-
-const createLegalPage = async (
-  payload: ICreateLegalPagePayload,
-): Promise<ILegalPage> => {
-  const slug = payload.slug?.trim() || generateSlug(payload.title);
-
-  const existing = await prisma.legalPage.findUnique({
-    where: { slug },
-  });
-
-  if (existing) {
-    throw new ApiError(
-      StatusCodes.CONFLICT,
-      `A legal page with slug "${slug}" already exists`,
-    );
-  }
-
-  return prisma.legalPage.create({
-    data: {
-      title: payload.title.trim(),
-      slug,
-      content: payload.content,
-      isPublished: payload.isPublished ?? true,
-    },
-  });
 };
 
 const getAll = async (isAdmin = false): Promise<ILegalPage[]> => {
@@ -173,50 +138,19 @@ const updateById = async (
     throw new ApiError(StatusCodes.NOT_FOUND, `Legal document not found with ID: ${id}`);
   }
 
-  let slug = existing.slug;
-  if (payload.slug && payload.slug.trim() !== existing.slug) {
-    slug = payload.slug.trim();
-    const slugConflict = await prisma.legalPage.findUnique({
-      where: { slug },
-    });
-    if (slugConflict && slugConflict.id !== id) {
-      throw new ApiError(
-        StatusCodes.CONFLICT,
-        `A legal page with slug "${slug}" already exists`,
-      );
-    }
-  }
-
   return prisma.legalPage.update({
     where: { id },
     data: {
       ...(payload.title !== undefined && { title: payload.title.trim() }),
-      ...(payload.slug !== undefined && { slug }),
       ...(payload.content !== undefined && { content: payload.content }),
       ...(payload.isPublished !== undefined && { isPublished: payload.isPublished }),
     },
   });
 };
 
-const deleteById = async (id: string): Promise<void> => {
-  const existing = await prisma.legalPage.findUnique({
-    where: { id },
-  });
-
-  if (!existing) {
-    throw new ApiError(StatusCodes.NOT_FOUND, `Legal document not found with ID: ${id}`);
-  }
-
-  await prisma.legalPage.delete({
-    where: { id },
-  });
-};
-
 export const LegalService = {
-  createLegalPage,
   getAll,
   getByIdOrSlug,
   updateById,
-  deleteById,
   ensureDefaultLegalPages,
 };

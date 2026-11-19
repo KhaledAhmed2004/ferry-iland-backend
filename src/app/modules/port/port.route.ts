@@ -20,17 +20,17 @@ router.get(
   PortController.listPorts,
 );
 
-router.get('/:id', PortController.getPortById);
+router.get('/:portId', PortController.getPortById);
 
 router.patch(
-  '/:id',
+  '/:portId',
   auth(USER_ROLES.ADMIN),
   validateRequest(PortValidation.updatePortZodSchema),
   PortController.updatePort,
 );
 
 router.delete(
-  '/:id',
+  '/:portId',
   auth(USER_ROLES.ADMIN),
   PortController.deletePort,
 );

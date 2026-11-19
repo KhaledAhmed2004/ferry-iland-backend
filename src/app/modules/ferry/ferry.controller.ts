@@ -33,7 +33,8 @@ const listFerries = catchAsync(async (req, res) => {
 
 const getFerryById = catchAsync(async (req, res) => {
   const user = req.user as IAuthUser;
-  const result = await FerryService.getFerryById(user.id, req.params.id);
+  const ferryId = req.params.ferryId as string;
+  const result = await FerryService.getFerryById(user.id, ferryId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -57,9 +58,10 @@ const getFerryStats = catchAsync(async (req, res) => {
 
 const updateFerry = catchAsync(async (req, res) => {
   const user = req.user as IAuthUser;
+  const ferryId = req.params.ferryId as string;
   const result = await FerryService.updateFerry(
     user.id,
-    req.params.id,
+    ferryId,
     req.body,
   );
 
@@ -73,7 +75,8 @@ const updateFerry = catchAsync(async (req, res) => {
 
 const deleteFerry = catchAsync(async (req, res) => {
   const user = req.user as IAuthUser;
-  const result = await FerryService.deleteFerry(user.id, req.params.id);
+  const ferryId = req.params.ferryId as string;
+  const result = await FerryService.deleteFerry(user.id, ferryId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

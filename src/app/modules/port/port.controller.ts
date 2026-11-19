@@ -27,7 +27,7 @@ const listPorts = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getPortById = catchAsync(async (req: Request, res: Response) => {
-  const result = await PortService.getPortById(req.params.id);
+  const result = await PortService.getPortById(req.params.portId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -38,7 +38,7 @@ const getPortById = catchAsync(async (req: Request, res: Response) => {
 });
 
 const updatePort = catchAsync(async (req: Request, res: Response) => {
-  const result = await PortService.updatePort(req.params.id, req.body);
+  const result = await PortService.updatePort(req.params.portId, req.body);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -49,7 +49,7 @@ const updatePort = catchAsync(async (req: Request, res: Response) => {
 });
 
 const deletePort = catchAsync(async (req: Request, res: Response) => {
-  const result = await PortService.deletePort(req.params.id);
+  const result = await PortService.deletePort(req.params.portId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

@@ -27,14 +27,25 @@ const generateSecureToken = (): string => {
 };
 
 const assertAccountActive = (
-  user: { deletedAt?: Date | null; status: AccountStatus; isEmailVerified?: boolean },
+  user: {
+    deletedAt?: Date | null;
+    status: AccountStatus;
+    isEmailVerified?: boolean;
+  },
   requireEmailVerified = false,
 ) => {
   if (user.deletedAt) {
     throw new ApiError(StatusCodes.FORBIDDEN, 'Account has been deleted');
   }
-  if (requireEmailVerified && user.status === AccountStatus.UNVERIFIED && !user.isEmailVerified) {
-    throw new ApiError(StatusCodes.FORBIDDEN, 'Please verify your email to login');
+  if (
+    requireEmailVerified &&
+    user.status === AccountStatus.UNVERIFIED &&
+    !user.isEmailVerified
+  ) {
+    throw new ApiError(
+      StatusCodes.FORBIDDEN,
+      'Please verify your email to login',
+    );
   }
   if (user.status === AccountStatus.SUSPENDED) {
     throw new ApiError(
@@ -60,7 +71,9 @@ const createVerificationToken = async (
   });
 
   const rawToken =
-    type === TokenType.EMAIL_VERIFICATION ? generateNumericOtp(6) : generateSecureToken();
+    type === TokenType.EMAIL_VERIFICATION
+      ? generateNumericOtp(6)
+      : generateSecureToken();
   const tokenHash = await bcrypt.hash(rawToken, 10);
   const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
 
@@ -83,7 +96,9 @@ const sendAuthEmail = async (
   token: string,
 ) => {
   const isEmailVerification = type === TokenType.EMAIL_VERIFICATION;
-  const subject = isEmailVerification ? 'Verify Your Email' : 'Password Reset Request';
+  const subject = isEmailVerification
+    ? 'Verify Your Email'
+    : 'Password Reset Request';
   const body = isEmailVerification
     ? `<p>Your email verification OTP code is:</p>
        <h1 style="color: #2563eb; letter-spacing: 4px;">${token}</h1>
@@ -110,7 +125,12 @@ const sendAuthEmail = async (
 };
 
 const generateAccessToken = (
-  user: { id: string; email: string; role: Role | string; status: AccountStatus | string },
+  user: {
+    id: string;
+    email: string;
+    role: Role | string;
+    status: AccountStatus | string;
+  },
   sessionId: string,
   expiresIn = '7d',
 ): string => {
@@ -122,7 +142,9 @@ const generateAccessToken = (
       role: user.role,
       status: user.status,
       accountState:
-        user.status === AccountStatus.ACTIVE ? ACCOUNT_STATE.VERIFIED : (user.status as unknown as ACCOUNT_STATE),
+        user.status === AccountStatus.ACTIVE
+          ? ACCOUNT_STATE.VERIFIED
+          : (user.status as unknown as ACCOUNT_STATE),
       sessionId,
     },
     config.jwt.jwt_secret as Secret,
@@ -130,7 +152,10 @@ const generateAccessToken = (
   );
 };
 
-const handleFailedLoginAttempt = async (user: { id: string; failedLoginAttempts?: number | null }) => {
+const handleFailedLoginAttempt = async (user: {
+  id: string;
+  failedLoginAttempts?: number | null;
+}) => {
   const failedAttempts = (user.failedLoginAttempts || 0) + 1;
 
   if (failedAttempts >= 5) {
@@ -170,7 +195,8 @@ const registerUser = async (payload: IRegisterUserReq) => {
   );
 
   const isOperator =
-    payload.role === Role.OPERATOR || payload.role === (USER_ROLES.OPERATOR as string);
+    payload.role === Role.OPERATOR ||
+    payload.role === (USER_ROLES.OPERATOR as string);
   const role: Role = isOperator ? Role.OPERATOR : Role.USER;
 
   const displayName =
@@ -193,8 +219,14 @@ const registerUser = async (payload: IRegisterUserReq) => {
         ? {
             operatorProfile: {
               create: {
-                companyName: (payload.companyName || payload.businessName || displayName).trim(),
-                contactPersonName: (payload.contactPersonName || displayName).trim(),
+                companyName: (
+                  payload.companyName ||
+                  payload.businessName ||
+                  displayName
+                ).trim(),
+                contactPersonName: (
+                  payload.contactPersonName || displayName
+                ).trim(),
               },
             },
           }
@@ -203,14 +235,18 @@ const registerUser = async (payload: IRegisterUserReq) => {
     include: { operatorProfile: true },
   });
 
-  const otp = await createVerificationToken(user.id, TokenType.EMAIL_VERIFICATION);
+  const otp = await createVerificationToken(
+    user.id,
+    TokenType.EMAIL_VERIFICATION,
+  );
   await sendAuthEmail(user.email, user.name, TokenType.EMAIL_VERIFICATION, otp);
 
   return {
     userId: user.id,
     accountState: ACCOUNT_STATE.UNVERIFIED,
     status: user.status,
-    message: 'Registration successful. Please check your email for the verification OTP.',
+    message:
+      'Registration successful. Please check your email for the verification OTP.',
   };
 };
 
@@ -239,7 +275,10 @@ const verifyEmail = async (payload: IVerifyOtpReq) => {
   });
 
   if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'OTP has expired or is invalid');
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'OTP has expired or is invalid',
+    );
   }
 
   const isOtpValid = await bcrypt.compare(otpCode, tokenRecord.tokenHash);
@@ -272,7 +311,9 @@ const verifyEmail = async (payload: IVerifyOtpReq) => {
 
 const resendVerificationEmail = async (email: string) => {
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  });
 
   if (!user || user.deletedAt) {
     return {
@@ -287,7 +328,10 @@ const resendVerificationEmail = async (email: string) => {
 
   assertAccountActive(user);
 
-  const otp = await createVerificationToken(user.id, TokenType.EMAIL_VERIFICATION);
+  const otp = await createVerificationToken(
+    user.id,
+    TokenType.EMAIL_VERIFICATION,
+  );
   await sendAuthEmail(user.email, user.name, TokenType.EMAIL_VERIFICATION, otp);
 
   return {
@@ -323,12 +367,19 @@ const loginUser = async (
     );
   }
 
-  const isPasswordValid = await bcrypt.compare(payload.password, user.passwordHash);
+  const isPasswordValid = await bcrypt.compare(
+    payload.password,
+    user.passwordHash,
+  );
   if (!isPasswordValid) {
     await handleFailedLoginAttempt(user);
   }
 
-  if (user.failedLoginAttempts > 0 || user.status === AccountStatus.LOCKED || user.lockedUntil) {
+  if (
+    user.failedLoginAttempts > 0 ||
+    user.status === AccountStatus.LOCKED ||
+    user.lockedUntil
+  ) {
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -345,7 +396,11 @@ const loginUser = async (
     clientIp,
   );
 
-  const accessToken = generateAccessToken(user, session.id, config.jwt.jwt_expire_in || '7d');
+  const accessToken = generateAccessToken(
+    user,
+    session.id,
+    config.jwt.jwt_expire_in || '7d',
+  );
 
   return {
     tokens: {
@@ -362,8 +417,13 @@ const loginUser = async (
       phoneNumber: user.phoneNumber,
       phone: user.phoneNumber,
       status: user.status,
-      accountState: user.status === AccountStatus.ACTIVE ? ACCOUNT_STATE.VERIFIED : user.status,
-      ...(user.operatorProfile ? { operatorProfile: user.operatorProfile } : {}),
+      accountState:
+        user.status === AccountStatus.ACTIVE
+          ? ACCOUNT_STATE.VERIFIED
+          : user.status,
+      ...(user.operatorProfile
+        ? { operatorProfile: user.operatorProfile }
+        : {}),
     },
   };
 };
@@ -412,7 +472,11 @@ const refreshToken = async (
     throw new ApiError(StatusCodes.UNAUTHORIZED, 'User is no longer active');
   }
 
-  const accessToken = generateAccessToken(user, session.id, config.jwt.jwt_expire_in || '15m');
+  const accessToken = generateAccessToken(
+    user,
+    session.id,
+    config.jwt.jwt_expire_in || '15m',
+  );
 
   return {
     tokens: {
@@ -430,10 +494,11 @@ const logoutUser = async (
 ) => {
   const currentSessionId = sessionId || (user as any).sessionId;
   if (currentSessionId) {
-    await prisma.session.updateMany({
-      where: { id: currentSessionId, userId: user.id, revokedAt: null },
-      data: { revokedAt: new Date(), revokedReason: RevocationReason.USER_LOGOUT },
-    });
+    await SessionService.revokeSession(
+      currentSessionId,
+      RevocationReason.USER_LOGOUT,
+      user.id,
+    );
   }
 
   return { message: 'User logged out successfully.' };
@@ -441,24 +506,38 @@ const logoutUser = async (
 
 const forgotPassword = async (email: string) => {
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  });
 
   if (!user || user.deletedAt) {
     return {
-      message: 'If an account with this email exists, a password reset link has been sent.',
+      message:
+        'If an account with this email exists, a password reset link has been sent.',
     };
   }
 
-  const resetToken = await createVerificationToken(user.id, TokenType.PASSWORD_RESET);
-  await sendAuthEmail(user.email, user.name, TokenType.PASSWORD_RESET, resetToken);
+  const resetToken = await createVerificationToken(
+    user.id,
+    TokenType.PASSWORD_RESET,
+  );
+  await sendAuthEmail(
+    user.email,
+    user.name,
+    TokenType.PASSWORD_RESET,
+    resetToken,
+  );
 
   return {
-    message: 'If an account with this email exists, a password reset link has been sent.',
+    message:
+      'If an account with this email exists, a password reset link has been sent.',
   };
 };
 
 const resetPassword = async (rawToken: string, payload: IResetPasswordReq) => {
-  const token = (payload.token || rawToken || '').replace(/^Bearer\s+/i, '').trim();
+  const token = (payload.token || rawToken || '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
   const email = payload.email?.toLowerCase().trim();
 
   let user = email ? await prisma.user.findUnique({ where: { email } }) : null;
@@ -477,14 +556,19 @@ const resetPassword = async (rawToken: string, payload: IResetPasswordReq) => {
     for (const recentToken of recentTokens) {
       if (await bcrypt.compare(token, recentToken.tokenHash)) {
         tokenRecord = recentToken;
-        user = await prisma.user.findUnique({ where: { id: recentToken.userId } });
+        user = await prisma.user.findUnique({
+          where: { id: recentToken.userId },
+        });
         break;
       }
     }
   }
 
   if (!user || !tokenRecord || tokenRecord.expiresAt < new Date()) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'Token has expired or is invalid');
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Token has expired or is invalid',
+    );
   }
 
   const isTokenValid = await bcrypt.compare(token, tokenRecord.tokenHash);
@@ -508,7 +592,10 @@ const resetPassword = async (rawToken: string, payload: IResetPasswordReq) => {
   });
 
   await prisma.verificationToken.delete({ where: { id: tokenRecord.id } });
-  await SessionService.revokeAllUserSessions(user.id, RevocationReason.PASSWORD_RESET);
+  await SessionService.revokeAllUserSessions(
+    user.id,
+    RevocationReason.PASSWORD_RESET,
+  );
 
   return {
     message: 'Password has been reset successfully. You can now log in.',

@@ -16,7 +16,7 @@ router.get(
 );
 
 router.patch(
-  '/:id/resolve',
+  '/:requestId/resolve',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(BookingRequestValidation.resolveBookingRequestZodSchema),
   BookingRequestController.resolveRequest,

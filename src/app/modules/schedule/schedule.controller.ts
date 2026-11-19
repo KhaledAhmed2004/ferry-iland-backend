@@ -34,7 +34,8 @@ const listSchedules = catchAsync(async (req: Request, res: Response) => {
 
 const getScheduleById = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await ScheduleService.getScheduleById(user.id, req.params.id);
+  const scheduleId = req.params.scheduleId as string;
+  const result = await ScheduleService.getScheduleById(user.id, scheduleId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -46,9 +47,10 @@ const getScheduleById = catchAsync(async (req: Request, res: Response) => {
 
 const updateSchedule = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
+  const scheduleId = req.params.scheduleId as string;
   const result = await ScheduleService.updateSchedule(
     user.id,
-    req.params.id,
+    scheduleId,
     req.body,
   );
 
@@ -62,9 +64,10 @@ const updateSchedule = catchAsync(async (req: Request, res: Response) => {
 
 const updateScheduleStatus = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
+  const scheduleId = req.params.scheduleId as string;
   const result = await ScheduleService.updateScheduleStatus(
     user.id,
-    req.params.id,
+    scheduleId,
     req.body.status,
   );
 
@@ -78,7 +81,8 @@ const updateScheduleStatus = catchAsync(async (req: Request, res: Response) => {
 
 const deleteSchedule = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await ScheduleService.deleteSchedule(user.id, req.params.id);
+  const scheduleId = req.params.scheduleId as string;
+  const result = await ScheduleService.deleteSchedule(user.id, scheduleId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -100,7 +104,8 @@ const searchTrips = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getPublicTripById = catchAsync(async (req: Request, res: Response) => {
-  const result = await ScheduleService.getPublicTripById(req.params.id);
+  const scheduleId = req.params.scheduleId as string;
+  const result = await ScheduleService.getPublicTripById(scheduleId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

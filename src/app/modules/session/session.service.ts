@@ -2,13 +2,12 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { UnauthorizedException, ConflictException } from '../../../errors';
 import { prisma } from '../../../shared/prisma';
-import { Session } from '@prisma/client';
+import { Prisma, Session } from '@prisma/client';
 
 export const SESSION_LIFETIME_DAYS = 30;
 
 export const RevocationReason = {
   USER_LOGOUT: 'USER_LOGOUT',
-  USER_LOGOUT_ALL: 'USER_LOGOUT_ALL',
   USER_REVOKED: 'USER_REVOKED',
   PASSWORD_RESET: 'PASSWORD_RESET',
   PASSWORD_CHANGED: 'PASSWORD_CHANGED',
@@ -156,10 +155,17 @@ const refreshSession = async (
 
 const revokeSession = async (
   sessionId: string,
-  reason: string = RevocationReason.USER_LOGOUT,
+  reason: RevocationReason = RevocationReason.USER_LOGOUT,
+  userId?: string,
+  tx?: Prisma.TransactionClient,
 ) => {
-  return prisma.session.update({
-    where: { id: sessionId },
+  const client = tx || prisma;
+  return client.session.updateMany({
+    where: {
+      id: sessionId,
+      ...(userId ? { userId } : {}),
+      revokedAt: null,
+    },
     data: {
       revokedAt: new Date(),
       revokedReason: reason,
@@ -169,9 +175,11 @@ const revokeSession = async (
 
 const revokeAllUserSessions = async (
   userId: string,
-  reason: string = RevocationReason.USER_LOGOUT_ALL,
+  reason: RevocationReason = RevocationReason.USER_REVOKED,
+  tx?: Prisma.TransactionClient,
 ) => {
-  return prisma.session.updateMany({
+  const client = tx || prisma;
+  return client.session.updateMany({
     where: {
       userId,
       revokedAt: null,

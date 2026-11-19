@@ -34,7 +34,7 @@ const RESOLVE_MESSAGES = {
 const resolveRequest = catchAsync(async (req: Request, res: Response) => {
   const result = await BookingRequestService.resolveRequest(
     actorFrom(req),
-    req.params.id,
+    req.params.requestId,
     req.body,
   );
 

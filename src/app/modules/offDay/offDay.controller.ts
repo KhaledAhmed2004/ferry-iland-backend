@@ -34,7 +34,8 @@ const listOffDays = catchAsync(async (req: Request, res: Response) => {
 
 const getOffDayById = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await OffDayService.getOffDayById(user.id, req.params.id);
+  const offDayId = req.params.offDayId as string;
+  const result = await OffDayService.getOffDayById(user.id, offDayId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -46,9 +47,10 @@ const getOffDayById = catchAsync(async (req: Request, res: Response) => {
 
 const updateOffDay = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
+  const offDayId = req.params.offDayId as string;
   const result = await OffDayService.updateOffDay(
     user.id,
-    req.params.id,
+    offDayId,
     req.body,
   );
 
@@ -62,7 +64,8 @@ const updateOffDay = catchAsync(async (req: Request, res: Response) => {
 
 const deleteOffDay = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await OffDayService.deleteOffDay(user.id, req.params.id);
+  const offDayId = req.params.offDayId as string;
+  const result = await OffDayService.deleteOffDay(user.id, offDayId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

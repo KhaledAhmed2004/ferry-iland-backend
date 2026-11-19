@@ -8,16 +8,8 @@ export type ILegalPage = {
   updatedAt: Date;
 };
 
-export type ICreateLegalPagePayload = {
-  title: string;
-  slug?: string;
-  content: string;
-  isPublished?: boolean;
-};
-
 export type IUpdateLegalPagePayload = {
   title?: string;
-  slug?: string;
   content?: string;
   isPublished?: boolean;
 };

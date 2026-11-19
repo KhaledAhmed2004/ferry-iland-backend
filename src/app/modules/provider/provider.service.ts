@@ -4,7 +4,7 @@ import ApiError from '../../../errors/ApiError';
 import { prisma } from '../../../shared/prisma';
 import { logger } from '../../../shared/logger';
 import { deleteFile } from '../../middlewares/fileHandler';
-import { RevocationReason } from '../session/session.service';
+import { SessionService, RevocationReason } from '../session/session.service';
 import {
   IOperatorSettingsUpdatePayload,
   IProviderFilterRequest,
@@ -214,10 +214,11 @@ const updateProviderStatus = async (
 
       // Log the operator out everywhere (same as UserService.updateUserStatus),
       // so open dashboards get a 401 and are sent back to login.
-      await tx.session.updateMany({
-        where: { userId: provider.userId, revokedAt: null },
-        data: { revokedAt: now, revokedReason: RevocationReason.USER_REVOKED },
-      });
+      await SessionService.revokeAllUserSessions(
+        provider.userId,
+        RevocationReason.USER_REVOKED,
+        tx,
+      );
       const unbookedUpcomingSchedules = await tx.schedule.findMany({
         where: {
           ferry: { operatorId: providerId },

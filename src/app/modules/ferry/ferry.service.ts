@@ -47,7 +47,10 @@ const assertRoutesExist = async (routeIds: string[]) => {
   if (unique.length === 0) return unique;
   const found = await prisma.route.count({ where: { id: { in: unique } } });
   if (found !== unique.length) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, 'One or more selected routes do not exist');
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'One or more selected routes do not exist',
+    );
   }
   return unique;
 };
@@ -186,13 +189,16 @@ const updateFerry = async (
 
   const { routeIds, ...data } = payload;
   // Omitted = keep the current routes; [] = clear them (ferry may sail any route).
-  const dedicated = routeIds === undefined ? undefined : await assertRoutesExist(routeIds);
+  const dedicated =
+    routeIds === undefined ? undefined : await assertRoutesExist(routeIds);
 
   return prisma.ferry.update({
     where: { id: ferryId },
     data: {
       ...data,
-      ...(dedicated ? { dedicatedRoutes: { set: dedicated.map(id => ({ id })) } } : {}),
+      ...(dedicated
+        ? { dedicatedRoutes: { set: dedicated.map(id => ({ id })) } }
+        : {}),
     },
     include: { dedicatedRoutes: dedicatedRoutesSelect },
   });

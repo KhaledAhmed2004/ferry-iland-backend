@@ -69,7 +69,7 @@ router.get(
 );
 
 router.patch(
-  '/bookings/:id/check-in',
+  '/bookings/:bookingId/check-in',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   BookingController.checkInBooking,
 );

@@ -64,7 +64,7 @@ const getBookingByReference = catchAsync(async (req: Request, res: Response) => 
 
 const cancelBooking = catchAsync(async (req: Request, res: Response) => {
   const result = await BookingService.cancelBooking(
-    req.params.id,
+    req.params.bookingId,
     requesterFrom(req),
   );
 
@@ -93,7 +93,7 @@ const listOperatorBookings = catchAsync(async (req: Request, res: Response) => {
 
 const checkInBooking = catchAsync(async (req: Request, res: Response) => {
   const user = req.user as IAuthUser;
-  const result = await BookingService.checkInBooking(user.id, req.params.id);
+  const result = await BookingService.checkInBooking(user.id, req.params.bookingId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,

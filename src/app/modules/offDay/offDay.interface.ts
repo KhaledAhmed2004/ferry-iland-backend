@@ -4,14 +4,14 @@ export interface ICreateOffDayPayload {
   date: string | Date;
   reason: string;
   category?: OffDayCategory;
-  ferryId?: string;
+  ferryId?: string | null;
 }
 
 export interface IUpdateOffDayPayload {
   date?: string | Date;
   reason?: string;
   category?: OffDayCategory;
-  ferryId?: string;
+  ferryId?: string | null;
 }
 
 export interface IOffDayFilterOptions {

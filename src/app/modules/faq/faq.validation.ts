@@ -13,7 +13,7 @@ const createFaqZodSchema = z.object({
       .min(3, 'Answer must be at least 3 characters'),
     category: z.string().trim().optional().default('Booking'),
     isPublished: z.boolean().optional().default(true),
-    order: z.coerce.number().int().optional().default(0),
+    order: z.coerce.number().int().optional(),
   }),
 });
 
@@ -51,32 +51,8 @@ const listFaqsQueryZodSchema = z.object({
   }),
 });
 
-
-const bulkPublishZodSchema = z.object({
-  body: z.object({
-    ids: z.array(z.string().min(1)).min(1, 'At least one FAQ ID is required'),
-    isPublished: z.boolean(),
-  }),
-});
-
-const bulkCategoryZodSchema = z.object({
-  body: z.object({
-    ids: z.array(z.string().min(1)).min(1, 'At least one FAQ ID is required'),
-    category: z.string().trim().min(1, 'Category is required'),
-  }),
-});
-
-const bulkDeleteZodSchema = z.object({
-  body: z.object({
-    ids: z.array(z.string().min(1)).min(1, 'At least one FAQ ID is required'),
-  }),
-});
-
 export const FaqValidation = {
   createFaqZodSchema,
   updateFaqZodSchema,
   listFaqsQueryZodSchema,
-  bulkPublishZodSchema,
-  bulkCategoryZodSchema,
-  bulkDeleteZodSchema,
 };

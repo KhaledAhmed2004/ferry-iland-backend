@@ -13,16 +13,6 @@ router.get(
   ScheduleController.searchTrips,
 );
 
-router.get(
-  '/public/:id',
-  ScheduleController.getPublicTripById,
-);
-
-router.get(
-  '/details/:id',
-  ScheduleController.getPublicTripById,
-);
-
 router.post(
   '/',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
@@ -51,44 +41,41 @@ router.post(
   ScheduleController.bulkDeleteSchedules,
 );
 
-router.get(
-  '/:id',
-  (req, res, next) => {
-    // 1. If accessing customer-facing /trips/:id, serve public trip details (for both guests and logged-in passengers)
-    if (req.baseUrl.endsWith('/trips') || req.originalUrl.includes('/trips/')) {
-      return ScheduleController.getPublicTripById(req, res, next);
-    }
-
-    // 2. If token is provided on /schedules/:id, verify if operator/admin; otherwise fallback to public trip details
-    if (req.headers.authorization) {
-      return auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN)(req, res, (err) => {
-        if (err) {
-          return ScheduleController.getPublicTripById(req, res, next);
-        }
-        return ScheduleController.getScheduleById(req, res, next);
-      });
-    }
-
+router.get('/:scheduleId', (req, res, next) => {
+  // 1. If accessing customer-facing /trips/:scheduleId, serve public trip details (for both guests and logged-in passengers)
+  if (req.baseUrl.endsWith('/trips') || req.originalUrl.includes('/trips/')) {
     return ScheduleController.getPublicTripById(req, res, next);
-  },
-);
+  }
+
+  // 2. If token is provided on /schedules/:scheduleId, verify if operator/admin; otherwise fallback to public trip details
+  if (req.headers.authorization) {
+    return auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN)(req, res, err => {
+      if (err) {
+        return ScheduleController.getPublicTripById(req, res, next);
+      }
+      return ScheduleController.getScheduleById(req, res, next);
+    });
+  }
+
+  return ScheduleController.getPublicTripById(req, res, next);
+});
 
 router.patch(
-  '/:id',
+  '/:scheduleId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(ScheduleValidation.updateScheduleZodSchema),
   ScheduleController.updateSchedule,
 );
 
 router.patch(
-  '/:id/status',
+  '/:scheduleId/status',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(ScheduleValidation.updateScheduleStatusZodSchema),
   ScheduleController.updateScheduleStatus,
 );
 
 router.delete(
-  '/:id',
+  '/:scheduleId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   ScheduleController.deleteSchedule,
 );

@@ -11,7 +11,7 @@ const listBookingRequestsQueryZodSchema = z.object({
 
 /** Spec 0004, AC-8 and AC-10. A reject must say why, since the customer reads the note. */
 const resolveBookingRequestZodSchema = z.object({
-  params: z.object({ id: z.string().uuid('Request id must be a valid UUID') }),
+  params: z.object({ requestId: z.string().uuid('Request id must be a valid UUID') }),
   body: z
     .object({
       action: z.enum(['CANCEL', 'RESCHEDULE', 'REJECT'], {

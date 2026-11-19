@@ -15,7 +15,7 @@ const createOffDayZodSchema = z.object({
       })
       .optional()
       .default(OffDayCategory.MAINTENANCE),
-    ferryId: z.string().uuid('ferryId must be a valid UUID').optional(),
+    ferryId: z.string().uuid('ferryId must be a valid UUID').optional().nullable(),
   }),
 });
 
@@ -33,7 +33,7 @@ const updateOffDayZodSchema = z.object({
         error: 'Category must be MAINTENANCE, WEATHER, or PUBLIC_HOLIDAY',
       })
       .optional(),
-    ferryId: z.string().uuid().optional(),
+    ferryId: z.string().uuid().optional().nullable(),
   }),
 });
 

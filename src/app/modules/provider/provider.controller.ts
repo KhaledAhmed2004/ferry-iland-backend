@@ -22,7 +22,7 @@ const listProviders = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getProviderById = catchAsync(async (req: Request, res: Response) => {
-  const result = await ProviderService.getProviderById(req.params.id);
+  const result = await ProviderService.getProviderById(req.params.providerId);
 
   sendResponse(res, {
     statusCode: StatusCodes.OK,
@@ -34,7 +34,7 @@ const getProviderById = catchAsync(async (req: Request, res: Response) => {
 
 const updateProviderStatus = catchAsync(async (req: Request, res: Response) => {
   const result = await ProviderService.updateProviderStatus(
-    req.params.id,
+    req.params.providerId,
     req.body,
   );
 

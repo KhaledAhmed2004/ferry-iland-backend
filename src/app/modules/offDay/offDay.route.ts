@@ -22,20 +22,20 @@ router.get(
 );
 
 router.get(
-  '/:id',
+  '/:offDayId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   OffDayController.getOffDayById,
 );
 
 router.patch(
-  '/:id',
+  '/:offDayId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   validateRequest(OffDayValidation.updateOffDayZodSchema),
   OffDayController.updateOffDay,
 );
 
 router.delete(
-  '/:id',
+  '/:offDayId',
   auth(USER_ROLES.OPERATOR, USER_ROLES.ADMIN),
   OffDayController.deleteOffDay,
 );

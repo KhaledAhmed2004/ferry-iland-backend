@@ -12,17 +12,17 @@ import { RefundRetryService } from './refundRetry.service';
 const router = express.Router();
 
 const retryRefundZodSchema = z.object({
-  params: z.object({ id: z.string().uuid('Refund id must be a valid UUID') }),
+  params: z.object({ refundId: z.string().uuid('Refund id must be a valid UUID') }),
 });
 
 // Spec 0004, AC-21: admins only.
 router.post(
-  '/:id/retry',
+  '/:refundId/retry',
   auth(USER_ROLES.ADMIN),
   validateRequest(retryRefundZodSchema),
   catchAsync(async (req: Request, res: Response) => {
     const user = req.user as IAuthUser;
-    const result = await RefundRetryService.retryRefund(req.params.id, user.id);
+    const result = await RefundRetryService.retryRefund(req.params.refundId, user.id);
 
     sendResponse(res, {
       statusCode: StatusCodes.CREATED,
