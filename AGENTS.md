@@ -11,26 +11,26 @@
 Before investigating files one-by-one or answering whether an API or feature is ready, **run the automated audit engine** or read its generated report:
 
 ```bash
-# From Backend/cpbryn:
+# From backend/:
 npm run audit
 
-# Or from Frontend/island-hop:
-powershell -Command "cd '..\..\Backend\cpbryn'; npm run audit"
+# Or from frontend/:
+powershell -Command "cd '..\backend'; npm run audit"
 ```
 
 ### What `npm run audit` Does Deterministically (Zero Assumptions):
-1. **Route & Endpoint Introspection**: Scans all 19 Express route modules in `src/app/modules/`, extracts all 121 HTTP endpoints (Customer, Operator, Admin, Shared), and documents methods and source files.
-2. **PostgreSQL / Prisma Invariant Check**: Connects directly to the database via Prisma and confirms master entities: Ports (14), Operators (6), Ferries (12), Routes (37), Bookable Trips (680+), and active Bookings/Tickets.
-3. **Automated Vitest Suite**: Runs all 23 test suites (**284 tests**) in silent test mode and ensures 100% pass rate.
+1. **Route & Endpoint Introspection**: Scans all 18 Express route modules in `src/app/modules/`, extracts all 104 HTTP endpoints (Customer, Operator, Admin, Shared), and documents methods and source files.
+2. **PostgreSQL / Prisma Invariant Check**: Connects directly to the database via Prisma and confirms master entities: Ports, Operators, Ferries, Routes, Bookable Trips, and active Bookings/Tickets. The live counts are printed by the audit and stored in the report, so read them there rather than trusting a number written here.
+3. **Automated Vitest Suite**: Runs the whole Vitest unit suite (**16 files, 245 tests**) in silent test mode and ensures 100% pass rate. Real Postgres integration suites run separately with `npm run test:int`.
 4. **Live E2E Verification**: Executes `scripts/verify-e2e-flow.js` on port 5000 verifying:
    `Search -> Booking -> Seat Decrement -> Digital QR Pass -> Self-Service Portal -> Cancellation -> Seat Restoration`.
-5. **Machine-Readable Report**: Automatically updates `Backend/cpbryn/docs/LATEST-AUDIT-REPORT.json`.
+5. **Machine-Readable Report**: Automatically updates `backend/docs/LATEST-AUDIT-REPORT.json`.
 
 ---
 
 ## 2. Instant Ground Truth: `docs/LATEST-AUDIT-REPORT.json`
 
-AI agents should check [`Backend/cpbryn/docs/LATEST-AUDIT-REPORT.json`](file:///c:/Users/Khaled/Khaled%20Dask/Backend/cpbryn/docs/LATEST-AUDIT-REPORT.json) for instantaneous facts:
+AI agents should check [`backend/docs/LATEST-AUDIT-REPORT.json`](./docs/LATEST-AUDIT-REPORT.json) for instantaneous facts:
 - **`summary.routesCount`**: Total endpoints registered in the Express app.
 - **`summary.testSuitePassed`**: `true` if all unit/integration tests pass.
 - **`summary.databaseReady`**: `true` if master ports, ferries, routes, and schedules are seeded.
@@ -54,7 +54,10 @@ AI agents should check [`Backend/cpbryn/docs/LATEST-AUDIT-REPORT.json`](file:///
    - Operator Bookings: `GET /api/v1/operator/bookings`
    - Passenger Manifest: `GET /api/v1/operator/manifest/:scheduleId`
    - Operator Settings: `GET|PATCH /api/v1/operator/settings`
-4. **Public / Customer Endpoints**:
+4. **Notifications are email only**:
+   - `/api/v1/notifications` is **not** mounted, there is no `Notification` model, and the Mongoose notification module was removed. Do not assume an in app notification API exists.
+   - Side effect emails live in `<module>.email.ts` (`booking.email.ts`, `provider.email.ts`, `schedule.email.ts`), are called with `void` after the transaction commits, and never throw. See section 10 of the root `AGENTS.md`.
+5. **Public / Customer Endpoints**:
    - Live Trip Search: `GET /api/v1/trips/search?from=...&to=...&departureDate=YYYY-MM-DD&adults=N`
    - Trip Details: `GET /api/v1/trips/:id`
    - Connected Ports: `GET /api/v1/routes/ports`
